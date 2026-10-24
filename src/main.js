@@ -12,9 +12,12 @@ const $ = (selector) => document.querySelector(selector)
 const canvas = $('canvas.webgl')
 const isTouchDevice = window.matchMedia('(pointer: coarse) and (hover: none)').matches
 
-document.querySelector('[data-title]').textContent = cfg.title
-document.querySelector('[data-subtitle]').textContent = cfg.subtitle
-document.title = `${cfg.subtitle} · ${cfg.title}`
+const applyTitles = () => {
+    document.querySelector('[data-title]').textContent = cfg.title
+    document.querySelector('[data-subtitle]').textContent = cfg.subtitle
+    document.title = `${cfg.subtitle} · ${cfg.title}`
+}
+applyTitles()
 
 // ————————————————————————————————————————————————
 // Scena
@@ -85,6 +88,7 @@ const applyRooms = (rooms, firstLoad = false) => {
 const loadCollection = async (firstLoad = false) => {
     try {
         const rooms = await fetchRooms()
+        applyTitles()
         applyRooms(rooms, firstLoad)
         const list = drawings
         notice.hidden = !isDemo

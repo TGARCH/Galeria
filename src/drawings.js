@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { galleryConfig } from './config.js'
 
 // Źródło rysunków: /api/drawings (folder na Dysku Google).
 // Tryb ?demo generuje szkice w przeglądarce — do podglądu bez połączenia z Dyskiem.
@@ -11,6 +12,8 @@ export const fetchRooms = async () => {
     let body = null
     try { body = await response.json() } catch { /* brak JSON */ }
     if (!response.ok) throw new Error(body?.error || `Błąd ${response.status}`)
+    if (body.gallery?.title) galleryConfig.title = body.gallery.title
+    if (body.gallery?.subtitle) galleryConfig.subtitle = body.gallery.subtitle
     return body.rooms
 }
 

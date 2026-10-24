@@ -29,7 +29,12 @@ export default async function handler(req, res) {
         const rooms = (await listGallery()).map((room) => ({ id: room.id, title: room.title, drawings: room.files.map(toDrawing) }))
         // Krótki cache na CDN: nowe pliki z Dysku pojawiają się w galerii w ciągu ~minuty.
         res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300')
-        res.status(200).json({ rooms, updated: new Date().toISOString() })
+        // Tytuł galerii ustawiany osobno w każdym projekcie Vercel (ten sam kod, różne galerie)
+        const gallery = {
+            title: process.env.GALLERY_TITLE || null,
+            subtitle: process.env.GALLERY_SUBTITLE || null
+        }
+        res.status(200).json({ gallery, rooms, updated: new Date().toISOString() })
     } catch (error) {
         sendError(res, error)
     }

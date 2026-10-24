@@ -30,6 +30,14 @@ Tytuł bierze się z nazwy pliku; nazwy ze skanera (`20261022161541_001.jpg`) po
 |---|---|
 | `GOOGLE_API_KEY` | klucz Google API z włączonym Google Drive API |
 | `DRIVE_FOLDER_ID` | ID folderu (folder udostępniony: „Każdy, kto ma link → Przeglądający”) |
+| `GALLERY_TITLE` | tytuł galerii (opcjonalnie, domyślnie z `src/config.js`) |
+| `GALLERY_SUBTITLE` | podtytuł, np. „Rysunki” albo „Prace z kursu” (opcjonalnie) |
+
+## Kilka galerii z jednego kodu
+
+Każda galeria to osobny projekt Vercel podłączony do tego samego repozytorium, z własnymi
+zmiennymi `DRIVE_FOLDER_ID`, `GALLERY_TITLE`, `GALLERY_SUBTITLE` (i `GOOGLE_API_KEY`).
+Push na `main` wdraża zmiany we wszystkich galeriach naraz.
 
 ## Lokalnie
 
