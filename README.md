@@ -12,7 +12,7 @@ pojawia się w ramie na ścianie — sale dobudowują się same, gdy przybywa pr
 - `src/config.js` — tytuł, wymiary sal, wygląd ram
 
 **Sale = podfoldery.** Każdy podfolder folderu galerii to osobna sala, nazwa folderu to nazwa sali
-(duży napis na ścianie w miejscu jednej pracy, napis „Następna sala” przy przejściu i w rogu ekranu). Kolejność: numer na początku nazwy (`1 Grupa wtorkowa`,
+(na ścianie z przejściem do następnej sali: obok drzwi napis „Następna sala”, dalej duża nazwa bieżącej sali w miejscu jednej pracy; także w rogu ekranu). Kolejność: numer na początku nazwy (`1 Grupa wtorkowa`,
 numer nie jest wyświetlany), potem alfabetycznie. Pliki luzem w folderze głównym tworzą pierwszą salę.
 Puste foldery są pomijane.
 

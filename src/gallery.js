@@ -162,6 +162,7 @@ const slotsAlong = (length) => length < 2 ? 0 : Math.max(1, Math.floor((length -
 // doors: { west, east } — położenie przejścia (z) na ścianie zachodniej / wschodniej,
 // null = ściana bez przejścia. Zachodnia ściana pierwszej sali jest zarezerwowana na tytuł galerii.
 const NEXT_SIGN_GAP = 1.5        // miejsce na napis „Następna…” obok przejścia
+const TITLE_GAP = 2.4            // miejsce na nazwę sali (zamiast jednej pracy)
 const planRoom = (room, count, doors) => {
     const westSlots = room > 0
     const x0 = room * W
@@ -178,16 +179,21 @@ const planRoom = (room, count, doors) => {
         const inner = half - T / 2
         const dw = doorway / 2
         // odcinki ściany bocznej: [północny, południowy] (dla ściany bez przejścia — jeden, w polu "north")
-        const segments = (doorZ, signSide) => {
-            if (doorZ === null) return { north: [-inner + 0.3, inner - 0.3], south: null }
-            const gapN = signSide === 'north' ? NEXT_SIGN_GAP : 0.2
-            const gapS = signSide === 'south' ? NEXT_SIGN_GAP : 0.2
+        // ściana zachodnia: tylko przejście; ściana wschodnia: przejście, obok napis
+        // „Następna sala” i nazwa bieżącej sali — po stronie przejścia bliższej środka ściany
+        const segments = (doorZ, signSide, withTitle) => {
+            if (doorZ === null) {
+                if (!withTitle) return { north: [-inner + 0.3, inner - 0.3], south: null }
+                return { north: [-inner + 0.3, -TITLE_GAP / 2], south: [TITLE_GAP / 2, inner - 0.3] }
+            }
+            const reserved = NEXT_SIGN_GAP + (withTitle ? TITLE_GAP : 0)
+            const gapN = signSide === 'north' ? reserved : 0.2
+            const gapS = signSide === 'south' ? reserved : 0.2
             return { north: [-inner + 0.3, doorZ - dw - gapN], south: [doorZ + dw + gapS, inner - 0.3] }
         }
-        // napis „Następna…” stoi po stronie przejścia bliższej środka ściany
         const signSide = doors.east === null ? null : doors.east > 0 ? 'north' : 'south'
-        const west = segments(doors.west, null)
-        const east = segments(doors.east, signSide)
+        const west = segments(doors.west, null, false)
+        const east = segments(doors.east, signSide, true)
         const sideLine = (seg, x, rotY, reverse) => {
             if (!seg) return
             const [za, zb] = seg
@@ -195,7 +201,7 @@ const planRoom = (room, count, doors) => {
             reverse ? line(zb, za, n, (z, span) => add(x, z, rotY, span)) : line(za, zb, n, (z, span) => add(x, z, rotY, span))
         }
         const wallStep = (W - 2.2) / 5
-        const northX = [0, 1, 3, 4].map((k) => x0 + 1.1 + (k + 0.5) * wallStep)   // środek: nazwa sali
+        const northX = [0, 1, 2, 3, 4].map((k) => x0 + 1.1 + (k + 0.5) * wallStep)
 
         if (westSlots) sideLine(west.north, x0 + T / 2, Math.PI / 2, true)
         northX.forEach((x) => add(x, -inner, 0, wallStep))
@@ -226,10 +232,14 @@ const planRoom = (room, count, doors) => {
         line(x0 + W - 1.1, x0 + 1.1, 5, (x, span) => add(x, inner, Math.PI, span))
         if (westSlots) sideLine(west.south, x0 + T / 2, Math.PI / 2, true)
 
-        const title = { x: x0 + W / 2, z: -inner, rotY: 0 }
+        const dir = signSide === 'north' ? -1 : 1
+        const title = {
+            x: x0 + W - T / 2, rotY: -Math.PI / 2,
+            z: doors.east === null ? 0 : doors.east + dir * (dw + NEXT_SIGN_GAP + TITLE_GAP / 2)
+        }
         const nextSign = signSide && {
             x: x0 + W - T / 2, rotY: -Math.PI / 2,
-            z: doors.east + (signSide === 'north' ? -(dw + NEXT_SIGN_GAP / 2) : dw + NEXT_SIGN_GAP / 2)
+            z: doors.east + dir * (dw + NEXT_SIGN_GAP / 2)
         }
         return { x0, half, partitions, slots, title, nextSign }
     }
@@ -482,7 +492,7 @@ export class Gallery {
             }
             // nazwa sali w miejscu jednej pracy i napis przy przejściu do następnej
             const { title, nextSign } = plans[r]
-            addText(roomNameCanvas(this.roomTitles[r], rooms[r].drawings.length), title.x, cfg.frame.centerHeight + 0.15, title.z + 0.006, title.rotY, 1.9, 560 / 2048)
+            addText(roomNameCanvas(this.roomTitles[r], rooms[r].drawings.length), title.x - 0.006, cfg.frame.centerHeight + 0.15, title.z, title.rotY, 1.9, 560 / 2048)
             if (nextSign) addText(nextRoomCanvas(this.roomTitles[r + 1]), nextSign.x - 0.006, 1.55, nextSign.z, nextSign.rotY, 1.15, 300 / 1024)
         }
 
