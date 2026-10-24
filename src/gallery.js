@@ -9,40 +9,74 @@ import { loadTexture, displayTitle, formatDate } from './drawings.js'
 const unitBox = new THREE.BoxGeometry(1, 1, 1)
 const unitPlane = new THREE.PlaneGeometry(1, 1)
 
+// Podłoga z długich desek dębowych (jasny, matowo olejowany dąb). Tekstura jest
+// powtarzalna: obejmuje 2,4 × 2,4 m, deski 20 cm szerokości, przesunięte styki.
+export const FLOOR_TILE = 2.4
 const makeFloorTexture = () => {
-    const size = 1024
+    const size = 2048
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = size
     const ctx = canvas.getContext('2d')
-    const tiles = 2
-    const tile = size / tiles
-    for (let y = 0; y < tiles; y++) {
-        for (let x = 0; x < tiles; x++) {
-            const shade = 232 + Math.floor(Math.random() * 6)
-            ctx.fillStyle = `rgb(${shade},${shade - 3},${shade - 8})`
-            ctx.fillRect(x * tile, y * tile, tile, tile)
-            // delikatne żyłki kamienia
-            for (let v = 0; v < 26; v++) {
-                ctx.strokeStyle = `rgba(160,150,135,${Math.random() * 0.05})`
-                ctx.lineWidth = 1 + Math.random() * 2
-                ctx.beginPath()
-                const sx = x * tile + Math.random() * tile
-                const sy = y * tile + Math.random() * tile
-                ctx.moveTo(sx, sy)
-                ctx.bezierCurveTo(sx + 60, sy + 20, sx + 90, sy - 30, sx + 160, sy + 10)
-                ctx.stroke()
+    let seed = 41
+    const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646 }
+    const rows = 12
+    const rowH = size / rows
+    const plank = (x, y, w, h) => {
+        const tone = rand()
+        const r = 168 + tone * 24, g = 140 + tone * 20, b = 108 + tone * 16
+        const base = ctx.createLinearGradient(x, y, x + w, y + h)
+        base.addColorStop(0, `rgb(${r},${g},${b})`)
+        base.addColorStop(0.5 + (rand() - 0.5) * 0.4, `rgb(${r + 8},${g + 7},${b + 5})`)
+        base.addColorStop(1, `rgb(${r - 6},${g - 6},${b - 5})`)
+        ctx.fillStyle = base
+        ctx.fillRect(x, y, w, h)
+        // słoje: długie, lekko falujące linie wzdłuż deski
+        ctx.save()
+        ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
+        const lines = 26 + Math.floor(rand() * 14)
+        for (let i = 0; i < lines; i++) {
+            const ly = y + rand() * h
+            const amp = 1 + rand() * 4
+            const freq = 0.002 + rand() * 0.004
+            const phase = rand() * 10
+            ctx.strokeStyle = `rgba(${110 + rand() * 30},${78 + rand() * 20},${48},${0.1 + rand() * 0.18})`
+            ctx.lineWidth = 0.6 + rand() * 2.2
+            ctx.beginPath()
+            for (let px = x; px <= x + w; px += 12) {
+                const py = ly + Math.sin(px * freq + phase) * amp
+                px === x ? ctx.moveTo(px, py) : ctx.lineTo(px, py)
             }
+            ctx.stroke()
         }
+        // pojedyncze sęczki
+        if (rand() > 0.7) {
+            const kx = x + rand() * w, ky = y + h * (0.3 + rand() * 0.4)
+            const knot = ctx.createRadialGradient(kx, ky, 0, kx, ky, 10 + rand() * 8)
+            knot.addColorStop(0, 'rgba(105,72,42,0.45)')
+            knot.addColorStop(1, 'rgba(105,72,42,0)')
+            ctx.fillStyle = knot
+            ctx.fillRect(kx - 20, ky - 20, 40, 40)
+        }
+        ctx.restore()
+        // fugi
+        ctx.fillStyle = 'rgba(92,66,40,0.55)'
+        ctx.fillRect(x, y, w, 2)
+        ctx.fillRect(x, y, 2, h)
     }
-    ctx.strokeStyle = 'rgba(150,142,130,0.55)'
-    ctx.lineWidth = 3
-    for (let i = 0; i <= tiles; i++) {
-        ctx.beginPath(); ctx.moveTo(i * tile, 0); ctx.lineTo(i * tile, size); ctx.stroke()
-        ctx.beginPath(); ctx.moveTo(0, i * tile); ctx.lineTo(size, i * tile); ctx.stroke()
+    for (let row = 0; row < rows; row++) {
+        // deski 1,0–2,0 m; styki przesunięte w każdym rzędzie, z zawijaniem krawędzi
+        let x = -rand() * size * 0.6
+        const end = x + size
+        while (x < end) {
+            const w = Math.min(size * (0.42 + rand() * 0.42), end - x)
+            for (const offset of [0, size]) plank(x + offset, row * rowH, w, rowH)
+            x += w
+        }
     }
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+    texture.anisotropy = 8
     return texture
 }
 
@@ -65,13 +99,13 @@ const glowTexture = makeGlowTexture()
 const materials = {
     wall: new THREE.MeshStandardMaterial({ color: 0xf4f2ed, roughness: 0.94 }),
     baseboard: new THREE.MeshStandardMaterial({ color: 0xd6d1c8, roughness: 0.6 }),
-    floor: new THREE.MeshStandardMaterial({ map: floorTexture, color: 0xe2ddd4, roughness: 0.2, metalness: 0.0, envMapIntensity: 0.9 }),
+    floor: new THREE.MeshStandardMaterial({ map: floorTexture, color: 0xcdc6bd, roughness: 0.42, metalness: 0.0, envMapIntensity: 0.8 }),
     ceiling: new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 1 }),
     lightPanel: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     frame: new THREE.MeshStandardMaterial({ color: cfg.frame.color, roughness: 0.45, metalness: 0.1 }),
     mat: new THREE.MeshStandardMaterial({ color: cfg.frame.mat, roughness: 0.95, emissive: 0xfff8ee, emissiveIntensity: 0.06 }),
     matBevel: new THREE.MeshStandardMaterial({ color: 0xd9d4ca, roughness: 0.9 }),
-    fixture: new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.4, metalness: 0.5 }),
+    fixture: new THREE.MeshStandardMaterial({ color: 0xf7f6f3, roughness: 0.35, metalness: 0.05 }),
     glow: new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }),
     placeholder: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 1 })
 }
@@ -250,7 +284,7 @@ export class Gallery {
         floor.rotation.x = -Math.PI / 2
         floor.scale.set(length, D, 1)
         floor.position.set(length / 2, 0, 0)
-        floorTexture.repeat.set(length / 1.2, D / 1.2)
+        floorTexture.repeat.set(length / FLOOR_TILE, D / FLOOR_TILE)
         group.add(floor)
 
         const ceiling = new THREE.Mesh(unitPlane, materials.ceiling)
