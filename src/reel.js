@@ -17,30 +17,28 @@ export const FORMATS = {
 }
 
 export const SCENARIOS = {
-    newWork: 'Nowe prace (ok. 10 s na pracę)',
-    room: 'Przegląd sali (ok. 20–25 s)',
-    invitation: 'Zaproszenie do galerii (ok. 25–30 s)'
+    newWork: { label: 'Nowe prace', hint: 'wybrane prace z napisem „Nowa praca”' },
+    room: { label: 'Prezentacja sali', hint: 'kilka prac z wybranej sali, na początku nazwa sali' },
+    walk: { label: 'Spacer po galerii', hint: 'dłuższa prezentacja — kilka prac w każdej wybranej sali' }
 }
 
+// Ruch kamery jak w spacerze automatycznym: zwiedzający idzie od pracy do pracy,
+// omija ścianki, spokojnie obraca głowę, zatrzymuje się i przygląda.
+export const FPS = 30
 const EYE = 1.6
-const MAX_PITCH = 0.1   // ok. 6° — kamera nie patrzy w podłogę ani w sufit
-const angleDelta = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
-const lerpAngle = (a, b, k) => a + angleDelta(a, b) * k
-
-// gładkie dążenie do celu (sprężyna krytycznie tłumiona) — ciągła prędkość, bez szarpnięć
-const smoothDamp = (state, key, target, smoothTime, dt) => {
-    const omega = 2 / smoothTime
-    const x = omega * dt
-    const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
-    const change = state[key] - target
-    const temp = (state[`${key}V`] + omega * change) * dt
-    state[`${key}V`] = (state[`${key}V`] - omega * temp) * exp
-    state[key] = target + (change + temp) * exp
-}
-const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-const easeOut = (t) => 1 - Math.pow(1 - t, 3)
+const WALK_SPEED = 1.1     // m/s
+const DWELL = 3.6          // s przy jednej pracy
+const MAX_TURN = 0.8       // rad/s — najszybszy obrót głowy
+const MAX_PITCH = 0.08     // ok. 4,5° — kamera nie patrzy w podłogę ani w sufit
+const INTRO = 2.6          // s spokojnego ujęcia na początku (tytuł)
+const OUTRO = 3.2          // s planszy końcowej
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a))
+const easeInOut = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1)
 const fade = (u, a, b, c, d) => u < a ? 0 : u < b ? (u - a) / (b - a) : u < c ? 1 : u < d ? 1 - (u - c) / (d - c) : 0
+
+// szacowany czas filmu (do podglądu w panelu)
+export const estimateDuration = (count) => INTRO + OUTRO + count * (DWELL + 4.2)
 
 const pickMime = () => {
     const options = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1.4d0028', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
@@ -60,210 +58,187 @@ export class Reel {
         this.ctx = this.canvas.getContext('2d')
     }
 
-    // ——— geometria ujęć ———
-    // Każde ujęcie zwraca pozycję oka i kierunek patrzenia jako kąty (yaw/pitch), nie punkt —
-    // dzięki temu kamera nigdy nie „przewraca się” w dół. Całość dodatkowo wygładza
-    // sprężyna (stała prędkość bez szarpnięć na łączeniach ujęć).
-
-    side(art) { return new THREE.Vector3(art.normal.z, 0, -art.normal.x) }
-
-    viewpoint(art, distance, lateral = 0) {
-        for (let d = distance; d >= 1.1; d -= 0.15) {
-            const p = art.world.clone().addScaledVector(art.normal, d).addScaledVector(this.side(art), lateral)
-            if (!this.grid || this.grid.freeAt(p.x, p.z)) return new THREE.Vector3(p.x, EYE, p.z)
+    // odległość, z której cała rama mieści się w kadrze (zależna od formatu filmu)
+    viewpoint(art) {
+        const tanV = Math.tan(THREE.MathUtils.degToRad(this.vfov || 60) / 2)
+        const tanH = tanV * (this.aspect || 1)
+        const FILL = 0.7
+        const fit = Math.max(art.outerW / FILL / 2 / tanH, art.outerH / FILL / 2 / tanV)
+        const d0 = THREE.MathUtils.clamp(fit + 0.15, 1.8, 4.6)
+        for (let d = d0; d >= 1.2; d -= 0.15) {
+            const x = art.world.x + art.normal.x * d
+            const z = art.world.z + art.normal.z * d
+            if (!this.grid || this.grid.freeAt(x, z)) return new THREE.Vector3(x, EYE, z)
         }
-        return art.world.clone().addScaledVector(art.normal, 1.2).setY(EYE)
+        return new THREE.Vector3(art.world.x + art.normal.x * 1.4, EYE, art.world.z + art.normal.z * 1.4)
     }
 
-    aim(pos, target) {
-        const dx = target.x - pos.x
-        const dz = target.z - pos.z
-        const flat = Math.hypot(dx, dz) || 1e-6
-        return { yaw: Math.atan2(-dx, -dz), pitch: THREE.MathUtils.clamp(Math.atan2(target.y - pos.y, flat), -MAX_PITCH, MAX_PITCH) }
-    }
-
-    travelCurve(from, to) {
-        const points = this.grid?.path(from.x, from.z, to.x, to.z) || [[from.x, from.z], [to.x, to.z]]
-        const vectors = points.map(([x, z]) => new THREE.Vector3(x, EYE, z))
-        vectors[0].set(from.x, EYE, from.z)
-        vectors[vectors.length - 1].set(to.x, EYE, to.z)
-        if (vectors.length === 2) vectors.splice(1, 0, vectors[0].clone().lerp(vectors[1], 0.5))
-        const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5)
-        return { curve, length: Math.max(curve.getLength(), 0.01) }
-    }
-
-    // podejście do pracy z bliska po prostej, wzrok cały czas na pracy
-    dolly(art, from, to, duration, overlay) {
-        return {
-            duration, overlay, art,
-            camera: (u) => {
-                const pos = from.clone().lerp(to, ease(u))
-                return { pos, ...this.aim(pos, art.world) }
-            }
-        }
-    }
-
-    // przejście jak zwiedzający: obrót w miejscu (gdy trzeba), spacer omijający ściany
-    // z patrzeniem przed siebie, pod koniec wzrok spokojnie przechodzi na pracę
-    travel(state, art, to, speed, overlay) {
-        const { curve, length } = this.travelCurve(state.pos, to)
-        const headingAt = (e) => {
-            const t = curve.getTangentAt(THREE.MathUtils.clamp(e, 0.001, 0.999))
-            return Math.atan2(-t.x, -t.z)
-        }
-        const startHeading = headingAt(0.02)
-        const turn = Math.abs(angleDelta(state.yaw, startHeading))
-        const turnTime = turn > 0.5 ? THREE.MathUtils.clamp(turn / 0.9, 0.8, 2.4) : 0
-        const walkTime = Math.max(2.0, length / speed + 1.0)
-        const duration = turnTime + walkTime
-        const from = state.pos.clone()
-        return {
-            duration, overlay, art,
-            camera: (u) => {
-                const time = u * duration
-                if (time < turnTime) {
-                    const k = ease(time / turnTime)
-                    return { pos: from.clone(), yaw: lerpAngle(state.yaw, startHeading, k), pitch: state.pitch * (1 - k) }
+    // kolejność zwiedzania: sala po sali, w sali zawsze najbliższa następna praca
+    order(arts) {
+        const rest = [...arts]
+        const out = []
+        let pos = null
+        while (rest.length) {
+            const room = Math.min(...rest.map((a) => a.room))
+            const pool = rest.filter((a) => a.room === room)
+            let best = pool[0]
+            if (pos) {
+                let bestD = Infinity
+                for (const a of pool) {
+                    const d = this.viewpoint(a).distanceTo(pos)
+                    if (d < bestD) { bestD = d; best = a }
                 }
-                const w = (time - turnTime) / walkTime
-                const e = ease(w)
-                const pos = curve.getPointAt(e)
-                let yaw = headingAt(Math.min(e + 0.06, 1))
-                if (!turnTime) yaw = lerpAngle(state.yaw, yaw, THREE.MathUtils.smoothstep(w, 0, 0.3))
-                const target = this.aim(pos, art.world)
-                const k = THREE.MathUtils.smoothstep(w, 0.45, 0.95)
-                const startPitch = turnTime ? 0 : state.pitch * (1 - THREE.MathUtils.smoothstep(w, 0, 0.3))
-                return { pos, yaw: lerpAngle(yaw, target.yaw, k), pitch: startPitch * (1 - k) + target.pitch * k }
+            } else {
+                // start od pracy najbliżej wejścia do sali
+                const entry = new THREE.Vector3(room * cfg.room.width, EYE, room > 0 ? this.gallery.doorZ[room] : 0)
+                best = pool.reduce((m, a) => this.viewpoint(a).distanceTo(entry) < this.viewpoint(m).distanceTo(entry) ? a : m, pool[0])
             }
+            out.push(best)
+            rest.splice(rest.indexOf(best), 1)
+            pos = this.viewpoint(best)
         }
+        return out
     }
 
-    hold(art, at, duration, overlay, push = 0.2) {
-        const to = at.clone().addScaledVector(art.normal, -push)
-        return {
-            duration, overlay, art,
-            camera: (u) => {
-                const pos = at.clone().lerp(to, ease(u))
-                return { pos, ...this.aim(pos, art.world) }
-            }
-        }
-    }
-
-    // ——— scenariusze ———
-
-    build(scenario, options) {
+    // ——— trasa: symulacja spaceru klatka po klatce (z góry, więc podgląd = nagranie) ———
+    build(scenario, { artIds = [] }) {
         this.grid = this.gallery.bounds ? new Grid(this.gallery.bounds, this.gallery.colliders) : null
-        const arts = this.gallery.artworks
-        const shots = []
-        const caption = (art) => (ctx, u, W, H) => this.drawCaption(ctx, art, fade(u, 0.15, 0.35, 0.85, 1), W, H)
-        const add = (shot) => { shots.push(shot); return shot.camera(1) }
+        const ids = new Set(artIds)
+        const arts = this.order(this.gallery.artworks.filter((a) => ids.has(a.drawing.id)))
+        if (!arts.length) throw new Error('Brak wybranych prac')
+        const dt = 1 / FPS
+        const frames = []
+        const events = []
+        const pos = new THREE.Vector3()
+        let yaw = 0
+        let pitch = 0
+        const look = (target) => {
+            const dx = target.x - pos.x, dz = target.z - pos.z
+            return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(target.y - pos.y, Math.hypot(dx, dz)) }
+        }
+        const turn = (ty, tp, rate) => {
+            const k = 1 - Math.exp(-dt * rate)
+            const limit = MAX_TURN * dt
+            yaw += THREE.MathUtils.clamp(wrapAngle(ty - yaw) * k, -limit, limit)
+            pitch += THREE.MathUtils.clamp((THREE.MathUtils.clamp(tp, -MAX_PITCH, MAX_PITCH) - pitch) * k, -limit * 0.5, limit * 0.5)
+        }
+        const push = () => frames.push(pos.x, pos.y, pos.z, yaw, pitch)
 
-        if (scenario === 'newWork') {
-            const ids = (options.artIds || []).filter(Boolean)
-            let chosen = arts.filter((a) => ids.includes(a.drawing.id))
-            if (!chosen.length) chosen = [arts[arts.length - 1]]
-            // kolejność zwiedzania: tak jak wiszą w galerii (krótka droga)
-            chosen.sort((a, b) => a.room - b.room || a.index - b.index)
-            const many = chosen.length > 1
-            let state = null
-            chosen.forEach((art, i) => {
-                const label = many ? `NOWE PRACE · ${i + 1} / ${chosen.length}` : 'NOWA PRACA'
-                const near = this.viewpoint(art, 2.7, 0.3)
-                const close = this.viewpoint(art, 1.5, -0.1)
-                if (!state) {
-                    const far = this.viewpoint(art, 4.8, 0.9)
-                    state = add(this.dolly(art, far, near, 3.6, (ctx, u, W, H) => this.drawNewWork(ctx, art, label, fade(u, 0.3, 0.6, 2, 3), W, H)))
-                } else {
-                    state = add(this.travel(state, art, near, 1.0, (ctx, u, W, H) => this.drawNewWork(ctx, art, label, fade(u, 0.75, 0.95, 2, 3), W, H)))
+        // ujęcie otwierające: kilka kroków przed pierwszą pracą, już na nią patrząc
+        const first = arts[0]
+        const firstView = this.viewpoint(first)
+        pos.copy(firstView)
+        for (let d = 2.6; d > 0; d -= 0.2) {
+            const p = firstView.clone().addScaledVector(first.normal, d)
+            if (!this.grid || this.grid.freeAt(p.x, p.z)) { pos.copy(p); break }
+        }
+        ;({ yaw } = look(first.world))
+        pitch = 0
+        const introStart = frames.length / 5
+        for (let i = 0; i < INTRO * FPS; i++) push()
+        events.push({ type: 'intro', start: introStart, end: frames.length / 5, room: first.room })
+
+        let room = -1
+        arts.forEach((art, index) => {
+            const target = this.viewpoint(art)
+            const points = this.grid?.path(pos.x, pos.z, target.x, target.z) || [[pos.x, pos.z], [target.x, target.z]]
+            const vectors = points.map(([x, z]) => new THREE.Vector3(x, EYE, z))
+            if (vectors.length === 2) vectors.splice(1, 0, vectors[0].clone().lerp(vectors[1], 0.5))
+            const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5)
+            const length = curve.getLength()
+            const walkStart = frames.length / 5
+            if (length > 0.15) {
+                const duration = length / WALK_SPEED + 1.4
+                for (let t = 0; t < duration; t += dt) {
+                    const w = Math.min(t / duration, 1)
+                    const u = easeInOut(w)
+                    pos.copy(curve.getPointAt(u))
+                    pos.y = EYE + Math.sin(t * 6.2) * 0.006 * Math.sin(Math.PI * w)
+                    const ahead = curve.getPointAt(Math.min(u + 0.08, 1))
+                    const walkLook = ahead.distanceTo(pos) > 0.05 ? look(new THREE.Vector3(ahead.x, EYE, ahead.z)) : look(art.world)
+                    const artLook = look(art.world)
+                    const blend = THREE.MathUtils.smoothstep(w, 0.3, 0.9)
+                    turn(walkLook.yaw + wrapAngle(artLook.yaw - walkLook.yaw) * blend, artLook.pitch * blend, 1.6)
+                    push()
                 }
-                state = add(this.dolly(art, near, close, 3.6, (ctx, u, W, H) => this.drawNewWork(ctx, art, label, fade(u, -1, 0, 0.75, 1), W, H)))
-                state = add(this.hold(art, close, 2.2, null, 0.15))
-            })
-        }
-
-        if (scenario === 'room') {
-            const room = Number(options.room) || 0
-            const inRoom = arts.filter((a) => a.room === room)
-            const count = Math.min(6, inRoom.length)
-            const chosen = Array.from({ length: count }, (_, i) => inRoom[Math.floor((i + 0.5) * inRoom.length / count)])
-            const x0 = room * cfg.room.width
-            const doorZ = room > 0 ? this.gallery.doorZ[room] : 0
-            const start = new THREE.Vector3(x0 + 1.2, EYE, doorZ)
-            const intro = start.clone().add(new THREE.Vector3(1.4, 0, 0))
-            const centerLook = new THREE.Vector3(x0 + cfg.room.width * 0.75, EYE, 0)
-            let state = add({
-                duration: 3.0, art: null,
-                camera: (u) => {
-                    const pos = start.clone().lerp(intro, ease(u))
-                    return { pos, ...this.aim(pos, centerLook) }
-                },
-                overlay: (ctx, u, W, H) => this.drawRoomTitle(ctx, room, fade(u, 0.05, 0.3, 0.8, 1), W, H)
-            })
-            for (const art of chosen) {
-                const at = this.viewpoint(art, 2.5, 0.2)
-                state = add(this.travel(state, art, at, 1.1, null))
-                state = add(this.hold(art, at, 2.0, caption(art)))
+            } else {
+                // dojście już jest — tylko spokojny obrót na pracę
+                const artLook = look(art.world)
+                for (let t = 0; t < 1.2; t += dt) { turn(artLook.yaw, artLook.pitch, 2.0); push() }
             }
-        }
-
-        if (scenario === 'invitation') {
-            const titleLook = new THREE.Vector3(0, EYE + 0.3, 0)
-            const start = new THREE.Vector3(7.5, EYE, 0.4)
-            const near = new THREE.Vector3(4.2, EYE, 0)
-            let state = add({
-                duration: 3.4, art: null,
-                camera: (u) => {
-                    const pos = start.clone().lerp(near, ease(u))
-                    return { pos, ...this.aim(pos, titleLook) }
-                }
-            })
-            const rooms = this.gallery.rooms
-            const n = Math.min(4, rooms)
-            const pickRooms = Array.from({ length: n }, (_, i) => Math.floor((i + 0.5) * rooms / n))
-            for (const room of pickRooms) {
-                const inRoom = arts.filter((a) => a.room === room)
-                if (!inRoom.length) continue
-                const art = inRoom[Math.floor(inRoom.length / 2)]
-                const at = this.viewpoint(art, 2.6, 0.25)
-                state = add(this.travel(state, art, at, 1.4, null))
-                state = add(this.hold(art, at, 2.2, (ctx, u, W, H) => this.drawRoomLabel(ctx, room, fade(u, 0.1, 0.3, 0.85, 1), W, H)))
+            if (art.room !== room) {
+                events.push({ type: 'room', start: walkStart, end: frames.length / 5 + DWELL * FPS, room: art.room, first: room === -1 })
+                room = art.room
             }
-        }
-
-        // plansza końcowa
-        const last = shots[shots.length - 1]
-        const endFrom = last.camera(1)
-        const forward = new THREE.Vector3(-Math.sin(endFrom.yaw), 0, -Math.cos(endFrom.yaw))
-        shots.push({
-            duration: 3.0, art: last.art,
-            camera: (u) => ({ pos: endFrom.pos.clone().addScaledVector(forward, 0.25 * easeOut(u)), yaw: endFrom.yaw, pitch: endFrom.pitch }),
-            overlay: (ctx, u, W, H) => this.drawEndCard(ctx, clamp01(u / 0.35), W, H)
+            // przyglądanie się: delikatny ruch w bok i krok bliżej
+            const base = pos.clone()
+            const side = new THREE.Vector3(art.normal.z, 0, -art.normal.x)
+            const dwellStart = frames.length / 5
+            for (let t = 0; t < DWELL; t += dt) {
+                const s = t / DWELL
+                pos.copy(base).addScaledVector(side, Math.sin(s * Math.PI) * 0.1).addScaledVector(art.normal, -easeInOut(s) * 0.12)
+                const l = look(art.world)
+                turn(l.yaw, l.pitch, 2.0)
+                push()
+            }
+            events.push({ type: 'art', start: dwellStart, end: frames.length / 5, art, index, count: arts.length })
         })
 
-        let t = 0
-        for (const shot of shots) { shot.start = t; t += shot.duration }
-        this.shots = shots
-        this.total = t
+        // plansza końcowa: powolny krok wstecz
+        const base = pos.clone()
+        const last = arts[arts.length - 1]
+        const outroStart = frames.length / 5
+        for (let t = 0; t < OUTRO; t += dt) {
+            pos.copy(base).addScaledVector(last.normal, easeInOut(Math.min(t / 2.5, 1)) * 0.35)
+            push()
+        }
+        events.push({ type: 'end', start: outroStart, end: frames.length / 5 })
+
+        this.scenario = scenario
+        this.frames = new Float32Array(frames)
+        this.frameCount = frames.length / 5
+        this.events = events
+        this.total = this.frameCount / FPS
         return this.neededArtworks()
     }
 
     // Prace widoczne w nagraniu: wszystko w zasięgu wzroku z trasy kamery.
-    // Bliskie — w pełnej rozdzielczości, dalsze — podgląd. Wczytywane PRZED startem.
+    // Bliskie — pełna rozdzielczość, dalsze — podgląd. Wczytywane PRZED startem.
     neededArtworks() {
         const samples = []
-        for (const shot of this.shots) {
-            const steps = Math.max(2, Math.ceil(shot.duration * 3))
-            for (let i = 0; i <= steps; i++) samples.push(shot.camera(i / steps).pos)
-        }
+        for (let i = 0; i < this.frameCount; i += 10) samples.push(new THREE.Vector3(this.frames[i * 5], EYE, this.frames[i * 5 + 2]))
         const full = []
         const preview = []
         for (const art of this.gallery.artworks) {
             let d = Infinity
             for (const p of samples) d = Math.min(d, art.world.distanceTo(p))
-            if (d < 13) full.push(art)
-            else if (d < 32) preview.push(art)
+            if (d < 14) full.push(art)
+            else if (d < 34) preview.push(art)
         }
         return { full, preview }
+    }
+
+    // napisy dla bieżącej klatki
+    drawOverlays(ctx, frame, W, H) {
+        const kind = this.scenario
+        for (const e of this.events) {
+            if (frame < e.start - 1 || frame > e.end + 1) continue
+            const u = (frame - e.start) / Math.max(e.end - e.start, 1)
+            const len = (e.end - e.start) / FPS
+            const fadeIn = 0.5 / len, fadeOut = 0.45 / len
+            if (e.type === 'intro') {
+                if (kind === 'walk') this.drawGalleryTitle(ctx, fade(u, 0, fadeIn, 1 - fadeOut, 1), W, H)
+                else if (kind === 'room') this.drawRoomTitle(ctx, e.room, fade(u, 0, fadeIn, 1 - fadeOut, 1), W, H)
+            } else if (e.type === 'room') {
+                if (kind === 'walk' || (kind === 'room' && !e.first)) this.drawRoomLabel(ctx, e.room, fade(u, 0.05, 0.05 + fadeIn, 0.55, 0.55 + fadeOut), W, H)
+            } else if (e.type === 'art') {
+                const alpha = fade(u, 0.04, 0.04 + fadeIn, 1 - fadeOut, 1)
+                if (kind === 'newWork') this.drawNewWork(ctx, e.art, e.count > 1 ? `NOWE PRACE · ${e.index + 1} / ${e.count}` : 'NOWA PRACA', alpha, W, H)
+                else this.drawCaption(ctx, e.art, alpha, W, H)
+            } else if (e.type === 'end') {
+                this.drawEndCard(ctx, clamp01(u * len / 0.9), W, H)
+            }
+        }
     }
 
     // ——— napisy (rysowane w klatce wideo) ———
@@ -333,10 +308,21 @@ export class Reel {
         this.text(ctx, `${count} ${count === 1 ? 'praca' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'prace' : 'prac'}`, W / 2, y + 50 * s, `italic 400 ${30 * s}px "Cormorant Garamond", Georgia, serif`, '#6f6a62', alpha)
     }
 
+    drawGalleryTitle(ctx, alpha, W, H) {
+        if (alpha <= 0) return
+        const s = this.scale(W)
+        const y = H * 0.42
+        const w = Math.min(W * 0.86, 900 * s)
+        this.panel(ctx, (W - w) / 2, y - 120 * s, w, 190 * s, alpha)
+        this.text(ctx, cfg.subtitle.toUpperCase(), W / 2, y - 66 * s, `500 ${22 * s}px "Inter", Arial, sans-serif`, '#8c867c', alpha, 'center', 8 * s)
+        this.text(ctx, cfg.title, W / 2, y + 6 * s, `400 ${78 * s}px "Cormorant Garamond", Georgia, serif`, '#1f1d1a', alpha)
+        this.text(ctx, 'Wirtualna galeria', W / 2, y + 50 * s, `italic 400 ${30 * s}px "Cormorant Garamond", Georgia, serif`, '#6f6a62', alpha)
+    }
+
     drawRoomLabel(ctx, room, alpha, W, H) {
         if (alpha <= 0) return
         const s = this.scale(W)
-        const y = this.lowerY(H, W)
+        const y = H > W ? H * 0.16 : H * 0.14
         const w = Math.min(W * 0.8, 760 * s)
         this.panel(ctx, (W - w) / 2, y - 70 * s, w, 106 * s, alpha)
         this.text(ctx, 'SALA', W / 2, y - 34 * s, `500 ${20 * s}px "Inter", Arial, sans-serif`, '#8c867c', alpha, 'center', 8 * s)
@@ -370,6 +356,8 @@ export class Reel {
         const scale = Number(new URLSearchParams(window.location.search).get('reelscale')) || 1   // tylko do testów
         const W = Math.round(spec.size[0] * scale / 2) * 2
         const H = Math.round(spec.size[1] * scale / 2) * 2
+        this.aspect = W / H
+        this.vfov = spec.fov
         const needed = this.build(scenario, options)
         await this.gallery.preload(needed, onLoading)
 
@@ -386,9 +374,7 @@ export class Reel {
         this.H = H
         this.time = 0
         this.onProgress = onProgress
-        const first = this.shots[0].camera(0)
-        this.cam = { x: first.pos.x, xV: 0, y: first.pos.y, yV: 0, z: first.pos.z, zV: 0, yaw: first.yaw, yawV: 0, pitch: first.pitch, pitchV: 0 }
-        this.applyCamera(0)
+        this.applyCamera()
         this.active = true
         this.cancelled = false
         this.recorder = null
@@ -420,7 +406,6 @@ export class Reel {
     }
 
     async recordOffline(renderFrame) {
-        const FPS = 30
         const W = this.W, H = this.H
         let codec = null
         for (const candidate of ['avc1.640028', 'avc1.4d0028', 'avc1.640033', 'avc1.42e028']) {
@@ -435,11 +420,11 @@ export class Reel {
             error: (error) => { failure = error }
         })
         encoder.configure({ codec, width: W, height: H, bitrate: 12_000_000, framerate: FPS, latencyMode: 'quality' })
-        const frames = Math.ceil((this.total + 0.2) * FPS)
+        const frames = this.frameCount
         for (let i = 0; i < frames; i++) {
             if (this.cancelled || failure) break
             this.time = i / FPS
-            this.applyCamera(1 / FPS)
+            this.applyCamera()
             renderFrame()                       // render sceny 3D w bieżącym ujęciu
             this.composite(this.renderer.domElement)
             const frame = new VideoFrame(this.canvas, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) })
@@ -488,29 +473,23 @@ export class Reel {
     update(dt) {
         if (!this.active || this.offline) return
         this.time += Math.min(dt, 0.05)
-        this.applyCamera(dt)
-        if (this.time >= this.total + 0.15) this.stop(true)
+        this.applyCamera()
+        if (this.time >= this.total) this.stop(true)
     }
 
-    applyCamera(dt) {
-        const t = Math.min(this.time, this.total)
-        const shot = this.shots.find((s) => t >= s.start && t < s.start + s.duration) || this.shots[this.shots.length - 1]
-        const u = clamp01((t - shot.start) / shot.duration)
-        const { pos, yaw, pitch } = shot.camera(u)
-        const c = this.cam
-        const step = Math.min(dt, 0.05)
-        if (step > 0) {
-            smoothDamp(c, 'x', pos.x, 0.32, step)
-            smoothDamp(c, 'y', pos.y, 0.32, step)
-            smoothDamp(c, 'z', pos.z, 0.32, step)
-            smoothDamp(c, 'yaw', c.yaw + angleDelta(c.yaw, yaw), 0.42, step)
-            smoothDamp(c, 'pitch', pitch, 0.5, step)
-        }
-        this.camera.position.set(c.x, c.y, c.z)
-        this.camera.rotation.set(c.pitch, c.yaw, 0, 'YXZ')
-        this.currentShot = shot
-        this.currentU = u
-        if (!this.offline) this.onProgress?.(t, this.total)
+    // pozycja kamery z policzonej trasy (między klatkami — interpolacja dla podglądu)
+    applyCamera() {
+        const f = Math.min(this.time * FPS, this.frameCount - 1)
+        const i = Math.floor(f)
+        const j = Math.min(i + 1, this.frameCount - 1)
+        const k = f - i
+        const a = this.frames
+        const lerp = (n) => a[i * 5 + n] + (a[j * 5 + n] - a[i * 5 + n]) * k
+        this.camera.position.set(lerp(0), lerp(1), lerp(2))
+        const yaw = a[i * 5 + 3] + wrapAngle(a[j * 5 + 3] - a[i * 5 + 3]) * k
+        this.camera.rotation.set(lerp(4), yaw, 0, 'YXZ')
+        this.frame = f
+        if (!this.offline) this.onProgress?.(Math.min(this.time, this.total), this.total)
     }
 
     // składanie klatki: obraz 3D + napisy
@@ -518,6 +497,6 @@ export class Reel {
         if (!this.active) return
         const ctx = this.ctx
         ctx.drawImage(webglCanvas, 0, 0, this.W, this.H)
-        this.currentShot?.overlay?.(ctx, this.currentU, this.W, this.H)
+        this.drawOverlays(ctx, this.frame, this.W, this.H)
     }
 }
