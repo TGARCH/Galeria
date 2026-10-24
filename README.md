@@ -12,9 +12,13 @@ pojawia się w ramie na ścianie — sale dobudowują się same, gdy przybywa pr
 - `src/config.js` — tytuł, wymiary sal, wygląd ram
 
 **Sale = podfoldery.** Każdy podfolder folderu galerii to osobna sala, nazwa folderu to nazwa sali
-(widoczna nad wejściem i w rogu ekranu). Kolejność: numer na początku nazwy (`1 Grupa wtorkowa`,
+(tabliczka obok wejścia i napis w rogu ekranu). Kolejność: numer na początku nazwy (`1 Grupa wtorkowa`,
 numer nie jest wyświetlany), potem alfabetycznie. Pliki luzem w folderze głównym tworzą pierwszą salę.
-Puste foldery są pomijane. Sala z więcej niż 16 rysunkami rozrasta się w głąb o moduły po 12 miejsc.
+Puste foldery są pomijane.
+
+Układ sali: przejścia na środku ścian, na wspólnej osi wszystkich sal. Mała sala (do 14 prac) ma same ściany;
+większa dostaje ścianki wolnostojące w pasach po obu stronach osi i rośnie symetrycznie w głąb.
+Przy 3 i więcej ściankach ustawiają się na przemian wzdłuż i w poprzek.
 
 W sali rysunki układają się chronologicznie (data dodania na Dysk): nowe dochodzą na końcu, starsze nie zmieniają miejsc.
 Tytuł bierze się z nazwy pliku; nazwy ze skanera (`20261022161541_001.jpg`) pokazują tylko datę.

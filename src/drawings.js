@@ -107,7 +107,7 @@ const demoCanvas = (drawing) => {
 const demoRooms = () => {
     const count = Number(new URLSearchParams(window.location.search).get('demo')) || 40
     const all = demoDrawings(count)
-    const sizes = [6, 22, Math.max(0, count - 28)]
+    const sizes = [6, 20, Math.max(0, count - 26)]
     const titles = ['Grupa wtorkowa', 'Grupa środowa', 'Archiwalne prace']
     let start = 0
     return sizes.map((size, i) => {

@@ -147,40 +147,70 @@ const spotLensGeometry = new THREE.CircleGeometry(0.033, 16).translate(0, 0, 0.1
 const { width: W, depth: D, height: H, wall: T, doorway } = cfg.room
 const P = cfg.partition
 
-// Każda sala ma 12 m szerokości. Gdy ma więcej niż 16 rysunków, rozrasta się w głąb
-// o kolejne moduły 12 × 10 m (każdy z własną ścianką działową i miejscami na ścianach
-// bocznych). Przejścia między salami są w pierwszym module, przy ścianie północnej.
-const SLOTS_FIRST_MODULE = 16
-const SLOTS_NEXT_MODULE = 12
-const DOOR_Z = -D / 2 + 2.5
-export const modulesFor = (count) => 1 + Math.ceil(Math.max(0, count - SLOTS_FIRST_MODULE) / SLOTS_NEXT_MODULE)
+// Układ sali. Wszystkie sale leżą na wspólnej osi (z = 0) i są wobec niej symetryczne,
+// więc przejścia między salami wypadają zawsze na środku ścian, a oś pozostaje wolna.
+// Mała sala: same ściany. Większa: ścianki wolnostojące w pasach po obu stronach osi
+// (na przemian północ / południe); przy 3 i więcej ściankach — na przemian wzdłuż i w poprzek.
+const HALL_HALF = D / 2          // połowa głębokości sali bez ścianek
+const BAND = 7                   // głębokość pasa na jedną ściankę
+const PART_Z_LENGTH = 4.4        // ścianka ustawiona w poprzek (wzdłuż osi Z) jest krótsza
+const SLOT_STEP = 2.0
 
-// Kolejność miejsc: ściana północna (→), w każdym module ścianka działowa (← od północy,
-// → od południa) i w modułach dalszych ściany boczne (zachodnia ↓, wschodnia ↑),
-// na końcu ściana południowa (←). Nowe pliki trafiają na kolejne wolne miejsca.
-const roomSlots = (room, modules) => {
+// równomiernie rozmieszczone miejsca na odcinku ściany
+const slotsAlong = (length) => length < 2 ? 0 : Math.max(1, Math.floor((length - 0.6) / SLOT_STEP))
+
+const planRoom = (room, count) => {
+    const westSlots = room > 0
     const x0 = room * W
-    const z0 = -D / 2
-    const slots = []
-    const add = (x, z, rotY, span) => slots.push({ x, z, rotY, span, room })
-    const wallStep = (W - 2.2) / 5
-    const partStep = (P.length - 0.6) / 3
-    const sideStep = (D - 1.6) / 3
-    for (let k = 0; k < 5; k++) add(x0 + 1.1 + (k + 0.5) * wallStep, z0 + T / 2, 0, wallStep)
-    for (let m = 0; m < modules; m++) {
-        const zc = z0 + m * D + D / 2
-        const px = x0 + W / 2 - P.length / 2 + 0.3
-        for (let k = 2; k >= 0; k--) add(px + (k + 0.5) * partStep, zc - P.thickness / 2, Math.PI, partStep)
-        for (let k = 0; k < 3; k++) add(px + (k + 0.5) * partStep, zc + P.thickness / 2, 0, partStep)
-        if (m > 0) {
-            const top = z0 + m * D + 0.8
-            for (let k = 0; k < 3; k++) add(x0 + T / 2, top + (k + 0.5) * sideStep, Math.PI / 2, sideStep)
-            for (let k = 2; k >= 0; k--) add(x0 + W - T / 2, top + (k + 0.5) * sideStep, -Math.PI / 2, sideStep)
+    const build = (partitionCount) => {
+        const bands = Math.ceil(partitionCount / 2)
+        const half = HALL_HALF + bands * BAND
+        const slots = []
+        const add = (x, z, rotY, span) => slots.push({ x, z, rotY, span, room })
+        const line = (from, to, n, place) => {
+            if (!n) return
+            const step = (to - from) / n
+            for (let k = 0; k < n; k++) place(from + (k + 0.5) * step, Math.abs(step))
         }
+        const inner = half - T / 2
+        const doorEdge = doorway / 2
+        const sideLen = inner - doorEdge
+        const sideN = slotsAlong(sideLen)
+        const wallN = 5
+        // zachód, odcinek północny (od drzwi ku ścianie) → ściana północna → wschód, odcinek północny
+        if (westSlots) line(-doorEdge - 0.2, -inner + 0.3, sideN, (z, span) => add(x0 + T / 2, z, Math.PI / 2, span))
+        line(x0 + 1.1, x0 + W - 1.1, wallN, (x, span) => add(x, -inner, 0, span))
+        line(-inner + 0.3, -doorEdge - 0.2, sideN, (z, span) => add(x0 + W - T / 2, z, -Math.PI / 2, span))
+        // ścianki wolnostojące
+        const partitions = []
+        for (let i = 0; i < partitionCount; i++) {
+            const north = i % 2 === 0
+            const band = Math.floor(i / 2)
+            const zc = (north ? -1 : 1) * (HALL_HALF + band * BAND + BAND / 2)
+            const across = partitionCount >= 3 && i % 2 === 1
+            const cx = x0 + W / 2
+            if (!across) {
+                const len = P.length
+                partitions.push({ x: cx, z: zc, sx: len, sz: P.thickness })
+                line(cx - len / 2 + 0.3, cx + len / 2 - 0.3, 3, (x, span) => add(x, zc - P.thickness / 2, Math.PI, span))
+                line(cx + len / 2 - 0.3, cx - len / 2 + 0.3, 3, (x, span) => add(x, zc + P.thickness / 2, 0, span))
+            } else {
+                const len = PART_Z_LENGTH
+                partitions.push({ x: cx, z: zc, sx: P.thickness, sz: len })
+                line(zc - len / 2 + 0.2, zc + len / 2 - 0.2, 2, (z, span) => add(cx - P.thickness / 2, z, -Math.PI / 2, span))
+                line(zc + len / 2 - 0.2, zc - len / 2 + 0.2, 2, (z, span) => add(cx + P.thickness / 2, z, Math.PI / 2, span))
+            }
+        }
+        // wschód, odcinek południowy → ściana południowa → zachód, odcinek południowy
+        line(doorEdge + 0.2, inner - 0.3, sideN, (z, span) => add(x0 + W - T / 2, z, -Math.PI / 2, span))
+        line(x0 + W - 1.1, x0 + 1.1, wallN, (x, span) => add(x, inner, Math.PI, span))
+        if (westSlots) line(inner - 0.3, doorEdge + 0.2, sideN, (z, span) => add(x0 + T / 2, z, Math.PI / 2, span))
+        return { x0, half, partitions, slots }
     }
-    const south = z0 + modules * D - T / 2
-    for (let k = 4; k >= 0; k--) add(x0 + 1.1 + (k + 0.5) * wallStep, south, Math.PI, wallStep)
-    return slots
+    let partitionCount = 0
+    let plan = build(0)
+    while (plan.slots.length < count) plan = build(++partitionCount)
+    return plan
 }
 
 // Rozmiar oprawionego rysunku dopasowany do miejsca na ścianie
@@ -260,15 +290,31 @@ const entranceCanvas = (count) => {
     return texture
 }
 
-const roomTitleCanvas = (title) => {
+// Tabliczka informacyjna przy wejściu do sali
+const plaqueCanvas = (title, count) => {
     const canvas = document.createElement('canvas')
-    canvas.width = 2048
-    canvas.height = 384
+    canvas.width = 768
+    canvas.height = 432
     const ctx = canvas.getContext('2d')
-    ctx.textAlign = 'center'
-    ctx.fillStyle = '#2a2723'
-    ctx.font = '400 170px "Cormorant Garamond", Georgia, serif'
-    ctx.fillText(title, 1024, 240, 1960)
+    ctx.fillStyle = '#fbfaf7'
+    ctx.fillRect(0, 0, 768, 432)
+    ctx.fillStyle = '#9a948a'
+    ctx.font = '500 30px "Inter", "Helvetica Neue", Arial, sans-serif'
+    ctx.letterSpacing = '8px'
+    ctx.fillText('SALA', 56, 92)
+    ctx.letterSpacing = '0px'
+    ctx.fillStyle = '#1f1d1a'
+    ctx.font = '500 76px "Cormorant Garamond", Georgia, serif'
+    ctx.fillText(title, 56, 210, 660)
+    ctx.fillStyle = '#d8d3ca'
+    ctx.fillRect(56, 262, 120, 3)
+    ctx.fillStyle = '#6f6a62'
+    ctx.font = '400 32px "Inter", "Helvetica Neue", Arial, sans-serif'
+    const works = count === 1 ? '1 rysunek' : `${count} ${count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'rysunki' : 'rysunków'}`
+    ctx.fillText(works, 56, 336)
+    ctx.fillStyle = '#9a948a'
+    ctx.font = '400 28px "Inter", "Helvetica Neue", Arial, sans-serif'
+    ctx.fillText(cfg.title, 56, 384)
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     texture.anisotropy = 8
@@ -308,11 +354,10 @@ export class Gallery {
         if (!rooms.length) rooms = [{ id: 'empty', title: null, drawings: [] }]
         this.rooms = rooms.length
         this.roomTitles = rooms.map((room) => room.title || cfg.subtitle)
-        const modules = rooms.map((room) => modulesFor(room.drawings.length))
-        const depthOf = (r) => modules[r] * D
+        const plans = rooms.map((room, r) => planRoom(r, room.drawings.length))
+        const halfOf = (r) => plans[r].half
         const length = this.rooms * W
-        const maxDepth = Math.max(...modules) * D
-        const z0 = -D / 2
+        const maxHalf = Math.max(...plans.map((plan) => plan.half))
 
         // ——— architektura ———
         const addBox = (x, y, z, sx, sy, sz, material, collide = true) => {
@@ -332,62 +377,67 @@ export class Gallery {
         }
         // ściana wzdłuż osi Z od za do zb
         const wallAlongZ = (x, za, zb, height, y0) => addWall(x, (za + zb) / 2, T, zb - za, height, y0)
+        const addPlaque = (texture, x, z, rotY) => {
+            const material = new THREE.MeshBasicMaterial({ map: texture })
+            this.titledMaterials.push(material)
+            const plaque = new THREE.Mesh(unitPlane, material)
+            plaque.scale.set(0.56, 0.56 * 432 / 768, 1)
+            plaque.position.set(x, 1.5, z)
+            plaque.rotation.y = rotY
+            group.add(plaque)
+        }
 
-        addWall(length / 2, z0, length + T, T)                         // północ — wspólna dla wszystkich sal
+        // ściany poprzeczne: wejście, przejścia na środku ścian, koniec
         const doorHeight = 3.1
         for (let r = 0; r <= this.rooms; r++) {
             const x = r * W
-            const zEnd = z0 + Math.max(r > 0 ? depthOf(r - 1) : 0, r < this.rooms ? depthOf(r) : 0)
+            const reach = Math.max(r > 0 ? halfOf(r - 1) : 0, r < this.rooms ? halfOf(r) : 0)
             if (r === 0 || r === this.rooms) {
-                wallAlongZ(x, z0, zEnd)
+                wallAlongZ(x, -reach, reach)
             } else {
-                wallAlongZ(x, z0, DOOR_Z - doorway / 2)
-                wallAlongZ(x, DOOR_Z + doorway / 2, zEnd)
-                wallAlongZ(x, DOOR_Z - doorway / 2, DOOR_Z + doorway / 2, H - doorHeight, doorHeight)
+                wallAlongZ(x, -reach, -doorway / 2)
+                wallAlongZ(x, doorway / 2, reach)
+                wallAlongZ(x, -doorway / 2, doorway / 2, H - doorHeight, doorHeight)
             }
         }
         for (let r = 0; r < this.rooms; r++) {
-            const x0 = r * W
-            addWall(x0 + W / 2, z0 + depthOf(r), W + T, T)                // południe tej sali
-            for (let m = 0; m < modules[r]; m++) {
-                const zc = z0 + m * D + D / 2
-                addWall(x0 + W / 2, zc, P.length, P.thickness, P.height)
-                addBox(x0 + W / 2, P.height + 0.004, zc, P.length + 0.002, 0.008, P.thickness + 0.002, materials.baseboard, false)
-                // świetliki
+            const { x0, half, partitions } = plans[r]
+            addWall(x0 + W / 2, -half, W + T, T)                          // północ
+            addWall(x0 + W / 2, half, W + T, T)                           // południe
+            for (const part of partitions) {
+                addWall(part.x, part.z, part.sx, part.sz, P.height)
+                addBox(part.x, P.height + 0.004, part.z, part.sx + 0.002, 0.008, part.sz + 0.002, materials.baseboard, false)
+            }
+            // świetliki: rzędy co ok. 5 m
+            const rows = Math.max(2, Math.round((2 * half - 5) / 5) + 1)
+            for (let i = 0; i < rows; i++) {
+                const pz = -half + 2.5 + i * (2 * half - 5) / (rows - 1)
                 for (const px of [-3.4, 0, 3.4]) {
-                    for (const pz of [-2.6, 2.6]) {
-                        const panel = new THREE.Mesh(unitPlane, materials.lightPanel)
-                        panel.rotation.x = Math.PI / 2
-                        panel.scale.set(2.6, 1.5, 1)
-                        panel.position.set(x0 + W / 2 + px, H - 0.005, zc + pz)
-                        group.add(panel)
-                    }
+                    const panel = new THREE.Mesh(unitPlane, materials.lightPanel)
+                    panel.rotation.x = Math.PI / 2
+                    panel.scale.set(2.6, 1.5, 1)
+                    panel.position.set(x0 + W / 2 + px, H - 0.005, pz)
+                    group.add(panel)
                 }
             }
-            // nazwa sali nad wejściem, czytelna z poprzedniej sali
-            if (r > 0) {
-                const material = new THREE.MeshBasicMaterial({ map: roomTitleCanvas(this.roomTitles[r]), transparent: true })
-                this.titledMaterials.push(material)
-                const sign = new THREE.Mesh(unitPlane, material)
-                sign.scale.set(3.4, 3.4 * 384 / 2048, 1)
-                sign.position.set(x0 - T / 2 - 0.006, (doorHeight + H) / 2, DOOR_Z)
-                sign.rotation.y = -Math.PI / 2
-                group.add(sign)
-            }
+            // tabliczka z nazwą sali obok wejścia (od strony nadchodzącego)
+            const plaque = plaqueCanvas(this.roomTitles[r], rooms[r].drawings.length)
+            if (r > 0) addPlaque(plaque, x0 - T / 2 - 0.004, doorway / 2 + 0.6, -Math.PI / 2)
+            else addPlaque(plaque, T / 2 + 0.004, 2.75, Math.PI / 2)
         }
 
         // podłoga i sufit: jeden prostokąt obejmujący wszystkie sale
         const floor = new THREE.Mesh(unitPlane, materials.floor)
         floor.rotation.x = -Math.PI / 2
-        floor.scale.set(length, maxDepth, 1)
-        floor.position.set(length / 2, 0, z0 + maxDepth / 2)
-        floorTexture.repeat.set(length / FLOOR_TILE, maxDepth / FLOOR_TILE)
+        floor.scale.set(length, 2 * maxHalf, 1)
+        floor.position.set(length / 2, 0, 0)
+        floorTexture.repeat.set(length / FLOOR_TILE, 2 * maxHalf / FLOOR_TILE)
         group.add(floor)
 
         const ceiling = new THREE.Mesh(unitPlane, materials.ceiling)
         ceiling.rotation.x = Math.PI / 2
-        ceiling.scale.set(length, maxDepth, 1)
-        ceiling.position.set(length / 2, H, z0 + maxDepth / 2)
+        ceiling.scale.set(length, 2 * maxHalf, 1)
+        ceiling.position.set(length / 2, H, 0)
         group.add(ceiling)
 
         // napis przy wejściu
@@ -395,14 +445,14 @@ export class Gallery {
         const entranceMaterial = new THREE.MeshBasicMaterial({ map: entranceCanvas(total), transparent: true })
         this.titledMaterials.push(entranceMaterial)
         const entrance = new THREE.Mesh(unitPlane, entranceMaterial)
-        entrance.scale.set(4.6, 4.6 * 720 / 2048, 1)
-        entrance.position.set(T / 2 + 0.005, 2.05, 0)
+        entrance.scale.set(4.0, 4.0 * 720 / 2048, 1)
+        entrance.position.set(T / 2 + 0.005, 2.1, 0)
         entrance.rotation.y = Math.PI / 2
         group.add(entrance)
 
         // ——— rysunki ———
         const placed = rooms.flatMap((room, r) => {
-            const slots = roomSlots(r, modules[r])
+            const slots = plans[r].slots
             return room.drawings.map((drawing, i) => ({ drawing, slot: slots[i], number: i + 1 }))
         })
         const spots = []
@@ -606,6 +656,6 @@ export class Gallery {
     }
 
     get spawn() {
-        return { x: 1.4, z: DOOR_Z + 0.6, yaw: -Math.PI / 2 + 0.3 }
+        return { x: 1.5, z: 0, yaw: -Math.PI / 2 }
     }
 }
