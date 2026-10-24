@@ -4,6 +4,9 @@ import { displayTitle, formatDate, isDemo } from './drawings.js'
 // Panel „Studio” — widoczny tylko z ważnym dostępem (api/studio). Wybór scenariusza,
 // sali / pracy i formatu; podgląd albo nagranie i pobranie pliku wideo.
 
+const MAX_ARTS = 6
+const escapeHtml = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
 export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afterEnd }) => {
     const params = new URLSearchParams(window.location.search)
     if (params.has('studio')) {
@@ -31,7 +34,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             <p class="studio-eyebrow">Studio · rolki do mediów społecznościowych</p>
             <label>Scenariusz<select data-scenario>${Object.entries(SCENARIOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
             <label data-room-field hidden>Sala<select data-room></select></label>
-            <label data-art-field>Praca<select data-art></select></label>
+            <div class="studio-field" data-art-field><span>Prace do pokazania <em data-art-count></em></span><div class="studio-arts" data-art></div></div>
             <label>Format<select data-format>${Object.entries(FORMATS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select></label>
             <div class="studio-actions">
                 <button type="button" data-preview>Podgląd</button>
@@ -61,11 +64,24 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
         roomSelect.innerHTML = gallery.roomTitles.map((title, i) => `<option value="${i}">${i + 1}. ${title}</option>`).join('')
         // najnowsze prace na górze listy
         const arts = [...gallery.artworks].sort((a, b) => String(b.drawing.created || '').localeCompare(String(a.drawing.created || '')))
+        const previous = new Set(selectedIds())
+        if (!previous.size && arts[0]) previous.add(arts[0].drawing.id)
         artSelect.innerHTML = arts.map((art) => {
             const date = formatDate(art.drawing.date)
-            return `<option value="${art.drawing.id}">${displayTitle(art.drawing)}${date ? ` — ${date}` : ''} · ${gallery.roomTitles[art.room]}</option>`
+            const id = art.drawing.id
+            return `<label class="studio-art"><input type="checkbox" value="${id}"${previous.has(id) ? ' checked' : ''}><span>${escapeHtml(displayTitle(art.drawing))}${date ? ` — ${date}` : ''}<small>${escapeHtml(gallery.roomTitles[art.room])}</small></span></label>`
         }).join('')
+        updateCount()
     }
+    const selectedIds = () => [...artSelect.querySelectorAll('input:checked')].map((input) => input.value)
+    const updateCount = () => {
+        const n = selectedIds().length
+        $('[data-art-count]').textContent = n ? `— wybrano ${n} z max. ${MAX_ARTS}` : '— zaznacz co najmniej jedną'
+    }
+    artSelect.addEventListener('change', (event) => {
+        if (selectedIds().length > MAX_ARTS) event.target.checked = false
+        updateCount()
+    })
     const syncFields = () => {
         $('[data-room-field]').hidden = scenarioSelect.value !== 'room'
         $('[data-art-field]').hidden = scenarioSelect.value !== 'newWork'
@@ -90,6 +106,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
     })
 
     const run = async (record) => {
+        if (scenarioSelect.value === 'newWork' && !selectedIds().length) { status.textContent = 'Zaznacz prace do pokazania.'; return }
         panel.hidden = true
         button.hidden = true
         badge.hidden = false
@@ -99,7 +116,8 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             scenario: scenarioSelect.value,
             format: formatSelect.value,
             record,
-            options: { room: roomSelect.value, artId: artSelect.value },
+            options: { room: roomSelect.value, artIds: selectedIds() },
+            onLoading: (done, total) => { badge.textContent = `Wczytywanie prac ${done} / ${total}…` },
             renderFrame: reel.renderFrame,
             onProgress: (t, total, fraction) => {
                 badge.textContent = record && fraction !== undefined

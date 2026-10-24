@@ -728,13 +728,27 @@ export class Gallery {
         }
     }
 
-    // wczytanie pełnej rozdzielczości wybranych prac (np. przed nagraniem rolki)
-    async preload(arts) {
-        await Promise.all(arts.map(async (art) => {
-            if (art.level >= 2) return
-            while (art.loadingLevel) await new Promise((resolve) => setTimeout(resolve, 100))
-            if (art.level < 2) await this.load(art, 2)
-        }))
+    // Wczytanie przed nagraniem rolki: bliskie prace w pełnej rozdzielczości, dalsze
+    // jako podgląd; nieudane próby są ponawiane. onProgress(gotowe, wszystkie).
+    async preload({ full, preview }, onProgress) {
+        const jobs = [...full.map((art) => [art, 2]), ...preview.map((art) => [art, 1])]
+        for (const [art] of jobs) if (full.includes(art) && !art.labelReady) this.makeLabel(art)
+        let done = 0
+        onProgress?.(done, jobs.length)
+        const deadline = performance.now() + 120000
+        const queue = jobs.slice()
+        const worker = async () => {
+            while (queue.length) {
+                const [art, level] = queue.shift()
+                for (let attempt = 0; art.level < level && attempt < 4 && performance.now() < deadline; attempt++) {
+                    while (art.loadingLevel) await new Promise((resolve) => setTimeout(resolve, 80))
+                    if (art.level < level) await this.load(art, level)
+                    if (art.level < level) await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)))
+                }
+                onProgress?.(++done, jobs.length)
+            }
+        }
+        await Promise.all(Array.from({ length: 6 }, worker))
     }
 
     unload(art) {

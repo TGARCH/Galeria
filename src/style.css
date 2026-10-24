@@ -333,6 +333,14 @@ body.focused .crosshair { background: var(--ink); transform: scale(1.6); }
 .studio-eyebrow { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
 .studio-card label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
 .studio-card select { font: inherit; font-size: 14px; color: var(--ink); padding: 8px 10px; border: 1px solid var(--line); background: #fff; }
+.studio-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.studio-field em { font-style: normal; }
+.studio-arts { max-height: 30vh; overflow-y: auto; border: 1px solid var(--line); background: #fff; }
+.studio-card .studio-art { flex-direction: row; align-items: flex-start; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink); cursor: pointer; }
+.studio-art:last-child { border-bottom: none; }
+.studio-art input { margin-top: 3px; accent-color: var(--ink); }
+.studio-art small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.studio-card { max-height: 94vh; overflow-y: auto; }
 .studio-actions { display: flex; gap: 10px; margin-top: 6px; }
 .studio-actions button { flex: 1; padding: 12px; border: 1px solid var(--ink); background: none; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; }
 .studio-actions .primary { background: var(--ink); color: var(--paper); }
