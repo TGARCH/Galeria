@@ -28,7 +28,7 @@ Tytuł bierze się z nazwy pliku; nazwy ze skanera (`20261022161541_001.jpg`) po
 
 Przycisk „Spacer automatyczny” na ekranie startowym albo adres z `?spacer`
 (np. `https://galeria-tg.vercel.app/?spacer`) — kamera sama chodzi od pracy do pracy
-(sala po sali, omija ścianki), przy każdej zatrzymuje się ok. 7 s z podpisem, po ostatniej
+(sala po sali, omija ścianki), przy każdej zatrzymuje się ok. 4,5 s z podpisem, po ostatniej
 wraca płynnie na początek. Ruch myszą, klawisz lub dotyk przerywa spacer; z `?spacer`
 wraca on sam po minucie bezczynności. Parametry: `src/tour.js` (tempo, czas oglądania).
 

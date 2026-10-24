@@ -11,7 +11,8 @@ import * as THREE from 'three'
 const CELL = 0.25          // rozdzielczość siatki [m]
 const CLEARANCE = 0.55     // minimalna odległość od ścian [m]
 const WALK_SPEED = 1.15    // tempo spaceru [m/s]
-const DWELL = 7.5          // czas oglądania jednej pracy [s]
+const DWELL = 4.5          // czas oglądania jednej pracy [s]
+const MAX_TURN = 0.75      // najszybszy obrót głowy [rad/s] — spokojny, naturalny
 
 const easeInOut = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a))
@@ -166,13 +167,17 @@ export class Tour {
         if (this.active && this.state !== 'fade') this.planNext()
     }
 
+    // Wznowienie spaceru pamięta obejrzane prace — lista czyści się dopiero po
+    // obejściu całej galerii (pętla zaczyna się wtedy od wejścia).
     start(yaw, pitch) {
         if (!this.gallery.artworks.length) return
         this.rebuildGrid()
         this.active = true
         this.yaw = yaw
         this.pitch = pitch
-        this.visited.clear()
+        const ids = new Set(this.gallery.artworks.map((art) => art.drawing.id))
+        for (const id of this.visited) if (!ids.has(id)) this.visited.delete(id)
+        if (this.visited.size >= ids.size) this.visited.clear()
         this.planNext()
     }
 
@@ -223,7 +228,6 @@ export class Tour {
             return
         }
         this.current = art
-        this.visited.add(art.drawing.id)
         const target = this.viewpoint(art)
         const from = this.camera.position
         const points = this.grid?.path(from.x, from.z, target.x, target.z) || [[from.x, from.z], [target.x, target.z]]
@@ -231,7 +235,7 @@ export class Tour {
         if (vectors.length === 2) vectors.splice(1, 0, vectors[0].clone().lerp(vectors[1], 0.5))
         this.curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5)
         this.length = Math.max(this.curve.getLength(), 0.01)
-        this.duration = this.length / WALK_SPEED + 1.2
+        this.duration = this.length / WALK_SPEED + 1.6
         this.timer = 0
         this.state = 'walk'
         this.onCaption(null)
@@ -244,10 +248,12 @@ export class Tour {
         return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) }
     }
 
+    // płynny obrót z ograniczoną prędkością — bez szarpnięć przy dużych zmianach kierunku
     turnTowards(yaw, pitch, dt, rate) {
         const k = 1 - Math.exp(-dt * rate)
-        this.yaw += wrapAngle(yaw - this.yaw) * k
-        this.pitch += (pitch - this.pitch) * k
+        const limit = MAX_TURN * dt
+        this.yaw += THREE.MathUtils.clamp(wrapAngle(yaw - this.yaw) * k, -limit, limit)
+        this.pitch += THREE.MathUtils.clamp((pitch - this.pitch) * k, -limit * 0.6, limit * 0.6)
     }
 
     update(dt) {
@@ -267,13 +273,14 @@ export class Tour {
             const center = this.current.world
             const walkLook = this.lookTargetAngles(ahead.distanceTo(cam.position) > 0.05 ? new THREE.Vector3(ahead.x, this.eyeHeight - 0.05, ahead.z) : center)
             const artLook = this.lookTargetAngles(center)
-            const blend = THREE.MathUtils.smoothstep(t, 0.55, 0.95)
+            const blend = THREE.MathUtils.smoothstep(t, 0.3, 0.92)
             const yaw = walkLook.yaw + wrapAngle(artLook.yaw - walkLook.yaw) * blend
             const pitch = THREE.MathUtils.lerp(walkLook.pitch * 0.3, artLook.pitch, blend)
-            this.turnTowards(yaw, pitch, step, 3.2)
+            this.turnTowards(yaw, pitch, step, 1.6)
             if (t >= 1) {
                 this.state = 'dwell'
                 this.timer = 0
+                this.visited.add(this.current.drawing.id)   // obejrzana dopiero po dojściu
                 this.dwellBase = cam.position.clone()
                 this.onCaption(this.current)
             }
@@ -284,7 +291,7 @@ export class Tour {
             cam.position.copy(this.dwellBase).addScaledVector(side, Math.sin(s * Math.PI * 2) * 0.12)
             cam.position.addScaledVector(this.current.normal, -Math.sin(s * Math.PI) * 0.18)
             const look = this.lookTargetAngles(this.current.world.clone().add(new THREE.Vector3(0, Math.sin(s * Math.PI * 1.5) * 0.08, 0)))
-            this.turnTowards(look.yaw, look.pitch, step, 2.5)
+            this.turnTowards(look.yaw, look.pitch, step, 1.4)
             if (this.timer >= DWELL) this.planNext()
         } else if (this.state === 'fade') {
             // ściemnienie, powrót do wejścia, rozjaśnienie
