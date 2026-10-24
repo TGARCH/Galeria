@@ -530,19 +530,29 @@ export class Gallery {
             glow.position.set(0, 0.12, 0.002)
             holder.add(glow)
 
-            const frame = new THREE.Mesh(unitBox, materials.frame)
-            frame.scale.set(size.outerW, size.outerH, f.depth)
-            frame.position.z = f.depth / 2 + 0.004
-            holder.add(frame)
+            // rama z czterech listew — za passe-partout nie ma nic ciemnego, co mogłoby
+            // przebijać z daleka; warstwy (passe-partout, fazka, rysunek) rozsunięte o kilka mm
+            const front = f.depth + 0.004
+            const bar = (w, h, x, y) => {
+                const piece = new THREE.Mesh(unitBox, materials.frame)
+                piece.scale.set(w, h, f.depth)
+                piece.position.set(x, y, front - f.depth / 2)
+                holder.add(piece)
+            }
+            bar(size.outerW, f.profile, 0, (size.outerH - f.profile) / 2)
+            bar(size.outerW, f.profile, 0, -(size.outerH - f.profile) / 2)
+            bar(f.profile, size.outerH - 2 * f.profile, -(size.outerW - f.profile) / 2, 0)
+            bar(f.profile, size.outerH - 2 * f.profile, (size.outerW - f.profile) / 2, 0)
 
+            const matZ = front - 0.018          // passe-partout lekko cofnięte w głąb ramy
             const mat = new THREE.Mesh(unitPlane, materials.mat)
-            mat.scale.set(size.outerW - 2 * f.profile, size.outerH - 2 * f.profile, 1)
-            mat.position.z = f.depth + 0.0045
+            mat.scale.set(size.outerW - 2 * f.profile + 0.002, size.outerH - 2 * f.profile + 0.002, 1)
+            mat.position.z = matZ
             holder.add(mat)
 
             const bevel = new THREE.Mesh(unitPlane, materials.matBevel)
             bevel.scale.set(size.imgW + 0.008, size.imgH + 0.008, 1)
-            bevel.position.z = f.depth + 0.0052
+            bevel.position.z = matZ + 0.003
             holder.add(bevel)
 
             const old = previous.get(drawing.id)
@@ -550,7 +560,7 @@ export class Gallery {
             if (old) reused.add(drawing.id)
             const art = new THREE.Mesh(unitPlane, artMaterial)
             art.scale.set(size.imgW, size.imgH, 1)
-            art.position.z = f.depth + 0.006
+            art.position.z = matZ + 0.006
             holder.add(art)
 
             const label = new THREE.Mesh(unitPlane, materials.placeholder)
