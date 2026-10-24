@@ -159,7 +159,10 @@ const SLOT_STEP = 2.0
 // równomiernie rozmieszczone miejsca na odcinku ściany
 const slotsAlong = (length) => length < 2 ? 0 : Math.max(1, Math.floor((length - 0.6) / SLOT_STEP))
 
-const planRoom = (room, count) => {
+// doors: { west, east } — położenie przejścia (z) na ścianie zachodniej / wschodniej,
+// null = ściana bez przejścia. Zachodnia ściana pierwszej sali jest zarezerwowana na tytuł galerii.
+const NEXT_SIGN_GAP = 1.5        // miejsce na napis „Następna…” obok przejścia
+const planRoom = (room, count, doors) => {
     const westSlots = room > 0
     const x0 = room * W
     const build = (partitionCount) => {
@@ -173,14 +176,30 @@ const planRoom = (room, count) => {
             for (let k = 0; k < n; k++) place(from + (k + 0.5) * step, Math.abs(step))
         }
         const inner = half - T / 2
-        const doorEdge = doorway / 2
-        const sideLen = inner - doorEdge
-        const sideN = slotsAlong(sideLen)
-        const wallN = 5
-        // zachód, odcinek północny (od drzwi ku ścianie) → ściana północna → wschód, odcinek północny
-        if (westSlots) line(-doorEdge - 0.2, -inner + 0.3, sideN, (z, span) => add(x0 + T / 2, z, Math.PI / 2, span))
-        line(x0 + 1.1, x0 + W - 1.1, wallN, (x, span) => add(x, -inner, 0, span))
-        line(-inner + 0.3, -doorEdge - 0.2, sideN, (z, span) => add(x0 + W - T / 2, z, -Math.PI / 2, span))
+        const dw = doorway / 2
+        // odcinki ściany bocznej: [północny, południowy] (dla ściany bez przejścia — jeden, w polu "north")
+        const segments = (doorZ, signSide) => {
+            if (doorZ === null) return { north: [-inner + 0.3, inner - 0.3], south: null }
+            const gapN = signSide === 'north' ? NEXT_SIGN_GAP : 0.2
+            const gapS = signSide === 'south' ? NEXT_SIGN_GAP : 0.2
+            return { north: [-inner + 0.3, doorZ - dw - gapN], south: [doorZ + dw + gapS, inner - 0.3] }
+        }
+        // napis „Następna…” stoi po stronie przejścia bliższej środka ściany
+        const signSide = doors.east === null ? null : doors.east > 0 ? 'north' : 'south'
+        const west = segments(doors.west, null)
+        const east = segments(doors.east, signSide)
+        const sideLine = (seg, x, rotY, reverse) => {
+            if (!seg) return
+            const [za, zb] = seg
+            const n = slotsAlong(zb - za)
+            reverse ? line(zb, za, n, (z, span) => add(x, z, rotY, span)) : line(za, zb, n, (z, span) => add(x, z, rotY, span))
+        }
+        const wallStep = (W - 2.2) / 5
+        const northX = [0, 1, 3, 4].map((k) => x0 + 1.1 + (k + 0.5) * wallStep)   // środek: nazwa sali
+
+        if (westSlots) sideLine(west.north, x0 + T / 2, Math.PI / 2, true)
+        northX.forEach((x) => add(x, -inner, 0, wallStep))
+        sideLine(east.north, x0 + W - T / 2, -Math.PI / 2, false)
         // ścianki wolnostojące — zawsze parami (po jednej w każdej połowie sali), żeby nie
         // zostawały puste place; kolejno od północy do południa, przy 4 i więcej na przemian
         // wzdłuż i w poprzek
@@ -203,11 +222,16 @@ const planRoom = (room, count) => {
                 line(zc + len / 2 - 0.2, zc - len / 2 + 0.2, 2, (z, span) => add(cx + P.thickness / 2, z, Math.PI / 2, span))
             }
         })
-        // wschód, odcinek południowy → ściana południowa → zachód, odcinek południowy
-        line(doorEdge + 0.2, inner - 0.3, sideN, (z, span) => add(x0 + W - T / 2, z, -Math.PI / 2, span))
-        line(x0 + W - 1.1, x0 + 1.1, wallN, (x, span) => add(x, inner, Math.PI, span))
-        if (westSlots) line(inner - 0.3, doorEdge + 0.2, sideN, (z, span) => add(x0 + T / 2, z, Math.PI / 2, span))
-        return { x0, half, partitions, slots }
+        sideLine(east.south, x0 + W - T / 2, -Math.PI / 2, false)
+        line(x0 + W - 1.1, x0 + 1.1, 5, (x, span) => add(x, inner, Math.PI, span))
+        if (westSlots) sideLine(west.south, x0 + T / 2, Math.PI / 2, true)
+
+        const title = { x: x0 + W / 2, z: -inner, rotY: 0 }
+        const nextSign = signSide && {
+            x: x0 + W - T / 2, rotY: -Math.PI / 2,
+            z: doors.east + (signSide === 'north' ? -(dw + NEXT_SIGN_GAP / 2) : dw + NEXT_SIGN_GAP / 2)
+        }
+        return { x0, half, partitions, slots, title, nextSign }
     }
     let partitionCount = 0
     let plan = build(0)
@@ -266,7 +290,7 @@ const labelCanvas = (drawing, number) => {
     ctx.fillStyle = '#9a948a'
     ctx.font = '400 26px "Inter", "Helvetica Neue", Arial, sans-serif'
     const date = formatDate(drawing.date)
-    ctx.fillText(date ? `${cfg.title}, ${date}` : cfg.title, 36, 226)
+    if (date) ctx.fillText(date, 36, 226)
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     texture.anisotropy = 4
@@ -297,31 +321,43 @@ const entranceCanvas = (count) => {
     return texture
 }
 
-// Tabliczka informacyjna przy wejściu do sali
-const plaqueCanvas = (title, count) => {
+const plural = (n) => n === 1 ? '1 rysunek'
+    : `${n} ${n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'rysunki' : 'rysunków'}`
+
+// Nazwa sali — napis na ścianie w miejscu jednej pracy (mniejszy niż tytuł galerii)
+const roomNameCanvas = (title, count) => {
     const canvas = document.createElement('canvas')
-    canvas.width = 768
-    canvas.height = 432
+    canvas.width = 2048
+    canvas.height = 560
     const ctx = canvas.getContext('2d')
-    ctx.fillStyle = '#fbfaf7'
-    ctx.fillRect(0, 0, 768, 432)
-    ctx.fillStyle = '#9a948a'
-    ctx.font = '500 30px "Inter", "Helvetica Neue", Arial, sans-serif'
-    ctx.letterSpacing = '8px'
-    ctx.fillText('SALA', 56, 92)
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#1f1d1a'
+    ctx.font = '400 190px "Cormorant Garamond", Georgia, serif'
+    ctx.fillText(title, 1024, 250, 1980)
+    ctx.fillStyle = '#8c867c'
+    ctx.font = '400 54px "Inter", "Helvetica Neue", Arial, sans-serif'
+    ctx.letterSpacing = '14px'
+    ctx.fillText(plural(count).toUpperCase(), 1024, 420)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.anisotropy = 8
+    return texture
+}
+
+// Mały napis przy przejściu do kolejnej sali
+const nextRoomCanvas = (title) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1024
+    canvas.height = 300
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#8c867c'
+    ctx.font = '500 46px "Inter", "Helvetica Neue", Arial, sans-serif'
+    ctx.letterSpacing = '10px'
+    ctx.fillText('NASTĘPNA SALA', 24, 86)
     ctx.letterSpacing = '0px'
     ctx.fillStyle = '#1f1d1a'
-    ctx.font = '500 76px "Cormorant Garamond", Georgia, serif'
-    ctx.fillText(title, 56, 210, 660)
-    ctx.fillStyle = '#d8d3ca'
-    ctx.fillRect(56, 262, 120, 3)
-    ctx.fillStyle = '#6f6a62'
-    ctx.font = '400 32px "Inter", "Helvetica Neue", Arial, sans-serif'
-    const works = count === 1 ? '1 rysunek' : `${count} ${count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'rysunki' : 'rysunków'}`
-    ctx.fillText(works, 56, 336)
-    ctx.fillStyle = '#9a948a'
-    ctx.font = '400 28px "Inter", "Helvetica Neue", Arial, sans-serif'
-    ctx.fillText(cfg.title, 56, 384)
+    ctx.font = '500 104px "Cormorant Garamond", Georgia, serif'
+    ctx.fillText(`${title} →`, 24, 222, 980)
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     texture.anisotropy = 8
@@ -361,7 +397,23 @@ export class Gallery {
         if (!rooms.length) rooms = [{ id: 'empty', title: null, drawings: [] }]
         this.rooms = rooms.length
         this.roomTitles = rooms.map((room) => room.title || cfg.subtitle)
-        const plans = rooms.map((room, r) => planRoom(r, room.drawings.length))
+        // przejścia: blisko środka ściany (do ±3 m), na przemian w jedną i drugą stronę,
+        // żeby kolejne przejścia nie wypadały naprzeciw siebie
+        const doorFor = (r, halves) => {
+            const minHalf = Math.min(halves[r - 1], halves[r])
+            const limit = Math.min(3, minHalf - 1 - doorway / 2)
+            return (r % 2 === 1 ? 1 : -1) * limit
+        }
+        const planAll = (halves) => {
+            const doorZ = rooms.map((_, r) => (r > 0 ? doorFor(r, halves) : null))
+            return rooms.map((room, r) => planRoom(r, room.drawings.length, {
+                west: r > 0 ? doorZ[r] : null,
+                east: r < rooms.length - 1 ? doorFor(r + 1, halves) : null
+            }))
+        }
+        let plans = planAll(rooms.map(() => HALL_HALF))
+        plans = planAll(plans.map((plan) => plan.half))
+        this.doorZ = rooms.map((_, r) => (r > 0 ? doorFor(r, plans.map((plan) => plan.half)) : null))
         const halfOf = (r) => plans[r].half
         const length = this.rooms * W
         const maxHalf = Math.max(...plans.map((plan) => plan.half))
@@ -384,14 +436,14 @@ export class Gallery {
         }
         // ściana wzdłuż osi Z od za do zb
         const wallAlongZ = (x, za, zb, height, y0) => addWall(x, (za + zb) / 2, T, zb - za, height, y0)
-        const addPlaque = (texture, x, z, rotY) => {
-            const material = new THREE.MeshBasicMaterial({ map: texture })
+        const addText = (texture, x, y, z, rotY, width, aspect) => {
+            const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false })
             this.titledMaterials.push(material)
-            const plaque = new THREE.Mesh(unitPlane, material)
-            plaque.scale.set(0.56, 0.56 * 432 / 768, 1)
-            plaque.position.set(x, 1.5, z)
-            plaque.rotation.y = rotY
-            group.add(plaque)
+            const text = new THREE.Mesh(unitPlane, material)
+            text.scale.set(width, width * aspect, 1)
+            text.position.set(x, y, z)
+            text.rotation.y = rotY
+            group.add(text)
         }
 
         // ściany poprzeczne: wejście, przejścia na środku ścian, koniec
@@ -402,9 +454,10 @@ export class Gallery {
             if (r === 0 || r === this.rooms) {
                 wallAlongZ(x, -reach, reach)
             } else {
-                wallAlongZ(x, -reach, -doorway / 2)
-                wallAlongZ(x, doorway / 2, reach)
-                wallAlongZ(x, -doorway / 2, doorway / 2, H - doorHeight, doorHeight)
+                const dz = this.doorZ[r]
+                wallAlongZ(x, -reach, dz - doorway / 2)
+                wallAlongZ(x, dz + doorway / 2, reach)
+                wallAlongZ(x, dz - doorway / 2, dz + doorway / 2, H - doorHeight, doorHeight)
             }
         }
         for (let r = 0; r < this.rooms; r++) {
@@ -427,10 +480,10 @@ export class Gallery {
                     group.add(panel)
                 }
             }
-            // tabliczka z nazwą sali obok wejścia (od strony nadchodzącego)
-            const plaque = plaqueCanvas(this.roomTitles[r], rooms[r].drawings.length)
-            if (r > 0) addPlaque(plaque, x0 - T / 2 - 0.004, doorway / 2 + 0.6, -Math.PI / 2)
-            else addPlaque(plaque, T / 2 + 0.004, 2.75, Math.PI / 2)
+            // nazwa sali w miejscu jednej pracy i napis przy przejściu do następnej
+            const { title, nextSign } = plans[r]
+            addText(roomNameCanvas(this.roomTitles[r], rooms[r].drawings.length), title.x, cfg.frame.centerHeight + 0.15, title.z + 0.006, title.rotY, 1.9, 560 / 2048)
+            if (nextSign) addText(nextRoomCanvas(this.roomTitles[r + 1]), nextSign.x - 0.006, 1.55, nextSign.z, nextSign.rotY, 1.15, 300 / 1024)
         }
 
         // podłoga i sufit: jeden prostokąt obejmujący wszystkie sale
