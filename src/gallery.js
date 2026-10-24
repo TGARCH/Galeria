@@ -728,6 +728,15 @@ export class Gallery {
         }
     }
 
+    // wczytanie pełnej rozdzielczości wybranych prac (np. przed nagraniem rolki)
+    async preload(arts) {
+        await Promise.all(arts.map(async (art) => {
+            if (art.level >= 2) return
+            while (art.loadingLevel) await new Promise((resolve) => setTimeout(resolve, 100))
+            if (art.level < 2) await this.load(art, 2)
+        }))
+    }
+
     unload(art) {
         art.material.map?.dispose()
         art.material.map = null

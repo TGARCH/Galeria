@@ -17,7 +17,7 @@ const MAX_TURN = 0.75      // najszybszy obrót głowy [rad/s] — spokojny, nat
 const easeInOut = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a))
 
-class Grid {
+export class Grid {
     constructor(bounds, colliders) {
         this.minX = bounds.minX
         this.minZ = bounds.minZ

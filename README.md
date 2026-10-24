@@ -32,6 +32,14 @@ Przycisk „Spacer automatyczny” na ekranie startowym albo adres z `?spacer`
 wraca płynnie na początek. Ruch myszą, klawisz lub dotyk przerywa spacer; z `?spacer`
 wraca on sam po minucie bezczynności. Parametry: `src/tour.js` (tempo, czas oglądania).
 
+## Studio — rolki do social mediów (tylko dla właściciela)
+
+Wejście raz przez `https://<adres galerii>/?studio=KLUCZ` (KLUCZ = wartość `STUDIO_KEY`)
+zapamiętuje dostęp w przeglądarce na 90 dni; pojawia się przycisk „Studio”. Scenariusze:
+„Nowa praca”, „Przegląd sali”, „Zaproszenie do galerii”; formaty 9:16, 4:5, 16:9.
+Film renderuje się klatka po klatce (30 kl./s, H.264 MP4) — zawsze płynny, niezależnie od
+komputera; najlepiej w Chrome lub Edge. Odwiedzający bez klucza nie widzą niczego.
+
 ## Zmienne środowiskowe (Vercel)
 
 | Nazwa | Wartość |
@@ -40,6 +48,7 @@ wraca on sam po minucie bezczynności. Parametry: `src/tour.js` (tempo, czas ogl
 | `DRIVE_FOLDER_ID` | ID folderu (folder udostępniony: „Każdy, kto ma link → Przeglądający”) |
 | `GALLERY_TITLE` | tytuł galerii (opcjonalnie, domyślnie z `src/config.js`) |
 | `GALLERY_SUBTITLE` | podtytuł, np. „Rysunki” albo „Prace z kursu” (opcjonalnie) |
+| `STUDIO_KEY` | tajne hasło do Studia (opcjonalnie; bez niego Studio jest wyłączone) |
 
 ## Kilka galerii z jednego kodu
 

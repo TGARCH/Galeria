@@ -5,6 +5,8 @@ import { inject } from '@vercel/analytics'
 import { galleryConfig as cfg } from './config.js'
 import { Gallery } from './gallery.js'
 import { Tour } from './tour.js'
+import { Reel } from './reel.js'
+import { initStudio } from './studio.js'
 import { fetchRooms, imageUrl, isDemo, displayTitle, formatDate } from './drawings.js'
 
 inject()
@@ -47,6 +49,7 @@ const fastWalkSpeed = 7.0
 scene.add(camera)
 
 window.addEventListener('resize', () => {
+    if (reel?.active) return
     camera.aspect = window.innerWidth / window.innerHeight
     camera.updateProjectionMatrix()
     renderer.setSize(window.innerWidth, window.innerHeight)
@@ -191,7 +194,7 @@ canvas.addEventListener('click', () => {
 document.addEventListener('pointerlockchange', () => {
     const active = document.pointerLockElement === canvas
     if (!active) pressedKeys.clear()
-    if (!lightboxOpen && !tour.active) showStartPanel(!active)
+    if (!lightboxOpen && !tour.active && !studioBusy) showStartPanel(!active)
 })
 
 document.addEventListener('mousemove', (event) => {
@@ -486,6 +489,29 @@ window.addEventListener('wheel', userInput, { capture: true, passive: true })
 window.addEventListener('mousemove', (event) => { if (Math.abs(event.movementX) + Math.abs(event.movementY) > 6) userInput() }, true)
 
 // ————————————————————————————————————————————————
+// Studio — nagrywanie rolek (tylko dla właściciela, adres z ?studio=KLUCZ)
+// ————————————————————————————————————————————————
+
+const reel = new Reel({ renderer, camera, gallery })
+reel.renderFrame = () => renderer.render(scene, camera)
+let studioBusy = false
+initStudio({
+    reel, gallery,
+    getDrawings: () => drawings,
+    beforeStart: () => {
+        studioBusy = true
+        if (tour.active) stopTour()
+        if (document.pointerLockElement) document.exitPointerLock()
+        startPanel.classList.add('hidden')
+        caption.hidden = true
+    },
+    afterEnd: () => {
+        studioBusy = false
+        showStartPanel(true)
+    }
+})
+
+// ————————————————————————————————————————————————
 // Pętla
 // ————————————————————————————————————————————————
 
@@ -493,10 +519,22 @@ const clock = new THREE.Clock()
 const tick = () => {
     const delta = clock.getDelta()
     const elapsed = clock.elapsedTime
+    if (reel.active && reel.offline) {          // nagrywanie klatka po klatce steruje się samo
+        window.requestAnimationFrame(tick)
+        return
+    }
+    if (reel.active) {
+        reel.update(delta)
+        gallery.stream(camera.position, elapsed)
+        renderer.render(scene, camera)
+        reel.composite(canvas)
+        window.requestAnimationFrame(tick)
+        return
+    }
     if (tour.active) tour.update(delta)
     else {
         updateWalk(delta)
-        if (autoTour && !lightboxOpen && performance.now() - lastInput > TOUR_IDLE_RESUME * 1000) startTour()
+        if (autoTour && !lightboxOpen && !studioBusy && performance.now() - lastInput > TOUR_IDLE_RESUME * 1000) startTour()
     }
     gallery.stream(camera.position, elapsed)
     updateFocus(elapsed)
