@@ -32,8 +32,8 @@ renderer.toneMappingExposure = 1.0
 
 const pmrem = new THREE.PMREMGenerator(renderer)
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-scene.environmentIntensity = 0.75
-scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4ca, 1.6))
+scene.environmentIntensity = 0.35
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4ca, 2.1))
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 80)
 const eyeHeight = 1.62

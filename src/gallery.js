@@ -97,8 +97,8 @@ const floorTexture = makeFloorTexture()
 const glowTexture = makeGlowTexture()
 
 const materials = {
-    wall: new THREE.MeshStandardMaterial({ color: 0xf4f2ed, roughness: 0.94 }),
-    baseboard: new THREE.MeshStandardMaterial({ color: 0xd6d1c8, roughness: 0.6 }),
+    wall: new THREE.MeshStandardMaterial({ color: 0xcfcdc9, roughness: 0.94 }),
+    baseboard: new THREE.MeshStandardMaterial({ color: 0xb3b0aa, roughness: 0.6 }),
     floor: new THREE.MeshStandardMaterial({ map: floorTexture, color: 0xcdc6bd, roughness: 0.42, metalness: 0.0, envMapIntensity: 0.8 }),
     ceiling: new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 1 }),
     lightPanel: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
