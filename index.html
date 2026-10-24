@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Galeria · Tomasz Grzyb</title>
+    <meta name="description" content="Wirtualna galeria rysunków Tomasza Grzyba">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <canvas class="webgl" aria-label="Galeria 3D"></canvas>
+
+    <div class="start-panel">
+        <div class="start-card">
+            <p class="eyebrow" data-subtitle>Rysunki</p>
+            <h1 data-title>Tomasz Grzyb</h1>
+            <p class="count" data-count>Wczytywanie kolekcji…</p>
+            <button class="start-button" type="button" disabled>Wejdź do galerii</button>
+            <div class="instructions desktop-only">
+                <span><kbd>W A S D</kbd> spacer</span>
+                <span><kbd>Shift</kbd> szybciej</span>
+                <span><kbd>Mysz</kbd> rozglądanie</span>
+                <span><kbd>Klik</kbd> powiększenie</span>
+                <span><kbd>Esc</kbd> pauza</span>
+            </div>
+            <div class="instructions touch-only">
+                <span>Joystick — spacer</span>
+                <span>Przesuń palcem — rozglądanie</span>
+                <span>Dotknij rysunku — powiększenie</span>
+            </div>
+            <p class="notice" data-notice hidden></p>
+        </div>
+    </div>
+
+    <div class="hud" aria-live="polite">
+        <span class="hud__room" data-room></span>
+        <div class="hud__caption" data-caption hidden>
+            <span class="hud__title"></span>
+            <span class="hud__hint">Kliknij, aby powiększyć</span>
+        </div>
+        <div class="crosshair" aria-hidden="true"></div>
+    </div>
+
+    <div class="mobile-controls" aria-label="Sterowanie dotykowe">
+        <button class="mobile-pause-button" type="button">Pauza</button>
+        <div class="mobile-joystick" aria-label="Joystick ruchu">
+            <div class="mobile-joystick__knob"></div>
+        </div>
+        <button class="mobile-run-button" type="button">Szybciej</button>
+    </div>
+
+    <div class="lightbox" role="dialog" aria-modal="true" aria-label="Podgląd rysunku" hidden>
+        <figure class="lightbox__figure">
+            <img class="lightbox__image" alt="">
+            <figcaption class="lightbox__caption">
+                <span class="lightbox__number"></span>
+                <span class="lightbox__title"></span>
+                <span class="lightbox__date"></span>
+            </figcaption>
+        </figure>
+        <button class="lightbox__nav lightbox__prev" type="button" aria-label="Poprzedni rysunek">‹</button>
+        <button class="lightbox__nav lightbox__next" type="button" aria-label="Następny rysunek">›</button>
+        <button class="lightbox__close" type="button">Wróć do galerii</button>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,425 @@
+import './style.css'
+import * as THREE from 'three'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { inject } from '@vercel/analytics'
+import { galleryConfig as cfg } from './config.js'
+import { Gallery } from './gallery.js'
+import { fetchDrawings, imageUrl, isDemo, displayTitle, formatDate } from './drawings.js'
+
+inject()
+
+const $ = (selector) => document.querySelector(selector)
+const canvas = $('canvas.webgl')
+const isTouchDevice = window.matchMedia('(pointer: coarse) and (hover: none)').matches
+
+document.querySelector('[data-title]').textContent = cfg.title
+document.querySelector('[data-subtitle]').textContent = cfg.subtitle
+document.title = `${cfg.subtitle} · ${cfg.title}`
+
+// ————————————————————————————————————————————————
+// Scena
+// ————————————————————————————————————————————————
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0xf1efea)
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
+renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2))
+renderer.outputColorSpace = THREE.SRGBColorSpace
+renderer.toneMapping = THREE.NeutralToneMapping
+renderer.toneMappingExposure = 1.0
+
+const pmrem = new THREE.PMREMGenerator(renderer)
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+scene.environmentIntensity = 0.75
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4ca, 1.6))
+
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 80)
+const eyeHeight = 1.62
+const visitorRadius = 0.25
+const walkSpeed = 1.9
+const fastWalkSpeed = 3.8
+scene.add(camera)
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.updateProjectionMatrix()
+    renderer.setSize(window.innerWidth, window.innerHeight)
+})
+
+const gallery = new Gallery(scene, renderer)
+let drawings = []
+
+// ————————————————————————————————————————————————
+// Kolekcja z Dysku
+// ————————————————————————————————————————————————
+
+const startButton = $('.start-button')
+const countLabel = $('[data-count]')
+const notice = $('[data-notice]')
+
+const pluralWorks = (n) => n === 1 ? '1 rysunek'
+    : `${n} ${n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'rysunki' : 'rysunków'}`
+
+const placeVisitor = () => {
+    const spawn = gallery.spawn
+    camera.position.set(spawn.x, eyeHeight, spawn.z)
+    yaw = spawn.yaw
+    pitch = 0
+}
+
+const applyDrawings = (list, firstLoad = false) => {
+    const changed = list.length !== drawings.length || list.some((d, i) => d.id !== drawings[i]?.id || d.title !== drawings[i]?.title)
+    if (!changed && !firstLoad) return
+    drawings = list
+    gallery.build(drawings)
+    countLabel.textContent = drawings.length ? pluralWorks(drawings.length) : 'Kolekcja jest pusta'
+    if (firstLoad) placeVisitor()
+}
+
+const loadCollection = async (firstLoad = false) => {
+    try {
+        const list = await fetchDrawings()
+        applyDrawings(list, firstLoad)
+        notice.hidden = !isDemo
+        if (isDemo) notice.textContent = 'Tryb podglądu: szkice demonstracyjne zamiast rysunków z Dysku.'
+        else if (!list.length) {
+            notice.hidden = false
+            notice.textContent = 'W folderze na Dysku nie ma jeszcze plików graficznych.'
+        }
+    } catch (error) {
+        console.error(error)
+        if (firstLoad) {
+            applyDrawings([], true)
+            countLabel.textContent = 'Nie udało się wczytać kolekcji'
+            notice.hidden = false
+            notice.textContent = error.message
+        }
+    } finally {
+        startButton.disabled = false
+    }
+}
+
+const fontsReady = document.fonts?.load ? Promise.all([
+    document.fonts.load('400 40px "Cormorant Garamond"'),
+    document.fonts.load('italic 400 40px "Cormorant Garamond"'),
+    document.fonts.load('400 20px "Inter"')
+]).catch(() => {}) : Promise.resolve()
+fontsReady.then(() => loadCollection(true))
+window.setInterval(() => { if (!document.hidden) loadCollection() }, cfg.refreshInterval * 1000)
+
+// ————————————————————————————————————————————————
+// Spacer
+// ————————————————————————————————————————————————
+
+let yaw = 0
+let pitch = 0
+const pressedKeys = new Set()
+const movement = new THREE.Vector3()
+const forward = new THREE.Vector3()
+const right = new THREE.Vector3()
+
+const startPanel = $('.start-panel')
+const mobileControls = $('.mobile-controls')
+const joystick = $('.mobile-joystick')
+const joystickKnob = $('.mobile-joystick__knob')
+const mobileRunButton = $('.mobile-run-button')
+const mobilePauseButton = $('.mobile-pause-button')
+
+let hasEntered = false
+let mobileActive = false
+let mobileForward = 0
+let mobileSide = 0
+let mobileRunning = false
+let joystickPointerId = null
+let lookPointerId = null
+let lookStart = null
+let lastLookX = 0
+let lastLookY = 0
+
+const navigationActive = () => isTouchDevice ? mobileActive : document.pointerLockElement === canvas
+
+const showStartPanel = (show) => {
+    startPanel.classList.toggle('hidden', !show)
+    startButton.textContent = hasEntered ? 'Wróć do galerii' : 'Wejdź do galerii'
+    document.body.classList.toggle('walking', !show && !isTouchDevice)
+}
+
+const setMobileNavigation = (active) => {
+    mobileActive = active
+    mobileControls.classList.toggle('active', active)
+    showStartPanel(!active)
+    if (!active) {
+        mobileForward = mobileSide = 0
+        joystickKnob.style.transform = 'translate(0, 0)'
+    }
+}
+
+const requestControls = () => {
+    if (isTouchDevice) setMobileNavigation(true)
+    else canvas.requestPointerLock()
+}
+
+startButton.addEventListener('click', () => {
+    hasEntered = true
+    requestControls()
+})
+
+canvas.addEventListener('click', () => {
+    if (isTouchDevice || lightboxOpen) return
+    if (document.pointerLockElement === canvas) {
+        if (focused) openLightbox(focused.index)
+        return
+    }
+    if (hasEntered) requestControls()
+})
+
+document.addEventListener('pointerlockchange', () => {
+    const active = document.pointerLockElement === canvas
+    if (!active) pressedKeys.clear()
+    if (!lightboxOpen) showStartPanel(!active)
+})
+
+document.addEventListener('mousemove', (event) => {
+    if (document.pointerLockElement !== canvas) return
+    yaw -= event.movementX * 0.0021
+    pitch -= event.movementY * 0.0021
+    pitch = THREE.MathUtils.clamp(pitch, -Math.PI * 0.42, Math.PI * 0.42)
+})
+
+window.addEventListener('keydown', (event) => {
+    if (lightboxOpen) {
+        if (event.code === 'Escape') closeLightbox()
+        if (event.code === 'ArrowRight') stepLightbox(1)
+        if (event.code === 'ArrowLeft') stepLightbox(-1)
+        return
+    }
+    pressedKeys.add(event.code)
+    if ((event.code === 'KeyE' || event.code === 'Enter') && focused && navigationActive()) openLightbox(focused.index)
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault()
+})
+window.addEventListener('keyup', (event) => pressedKeys.delete(event.code))
+window.addEventListener('blur', () => pressedKeys.clear())
+
+// joystick
+const updateJoystick = (clientX, clientY) => {
+    const bounds = joystick.getBoundingClientRect()
+    const maxDistance = bounds.width * 0.34
+    let dx = clientX - (bounds.left + bounds.width / 2)
+    let dy = clientY - (bounds.top + bounds.height / 2)
+    const distance = Math.hypot(dx, dy)
+    if (distance > maxDistance) { dx = dx / distance * maxDistance; dy = dy / distance * maxDistance }
+    joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`
+    mobileSide = dx / maxDistance
+    mobileForward = -dy / maxDistance
+}
+joystick.addEventListener('pointerdown', (event) => {
+    if (!mobileActive) return
+    joystickPointerId = event.pointerId
+    joystick.setPointerCapture(event.pointerId)
+    updateJoystick(event.clientX, event.clientY)
+})
+joystick.addEventListener('pointermove', (event) => {
+    if (event.pointerId === joystickPointerId) updateJoystick(event.clientX, event.clientY)
+})
+const releaseJoystick = (event) => {
+    if (event.pointerId !== joystickPointerId) return
+    joystickPointerId = null
+    mobileForward = mobileSide = 0
+    joystickKnob.style.transform = 'translate(0, 0)'
+}
+joystick.addEventListener('pointerup', releaseJoystick)
+joystick.addEventListener('pointercancel', releaseJoystick)
+
+// rozglądanie palcem + dotknięcie rysunku
+canvas.addEventListener('pointerdown', (event) => {
+    if (!isTouchDevice || !mobileActive || lookPointerId !== null) return
+    lookPointerId = event.pointerId
+    lastLookX = event.clientX
+    lastLookY = event.clientY
+    lookStart = { x: event.clientX, y: event.clientY, t: performance.now() }
+    canvas.setPointerCapture(event.pointerId)
+})
+canvas.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== lookPointerId) return
+    yaw -= (event.clientX - lastLookX) * 0.0048
+    pitch -= (event.clientY - lastLookY) * 0.004
+    pitch = THREE.MathUtils.clamp(pitch, -Math.PI * 0.42, Math.PI * 0.42)
+    lastLookX = event.clientX
+    lastLookY = event.clientY
+})
+const releaseLook = (event) => {
+    if (event.pointerId !== lookPointerId) return
+    lookPointerId = null
+    const tap = lookStart && Math.hypot(event.clientX - lookStart.x, event.clientY - lookStart.y) < 10 && performance.now() - lookStart.t < 350
+    if (tap && event.type === 'pointerup') {
+        const pointer = new THREE.Vector2(event.clientX / window.innerWidth * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1)
+        const art = pickArtwork(pointer, 6)
+        if (art) openLightbox(art.index)
+    }
+}
+canvas.addEventListener('pointerup', releaseLook)
+canvas.addEventListener('pointercancel', releaseLook)
+
+mobileRunButton.addEventListener('pointerdown', (event) => {
+    event.stopPropagation()
+    mobileRunning = true
+    mobileRunButton.classList.add('pressed')
+})
+const stopRunning = () => { mobileRunning = false; mobileRunButton.classList.remove('pressed') }
+mobileRunButton.addEventListener('pointerup', stopRunning)
+mobileRunButton.addEventListener('pointercancel', stopRunning)
+mobilePauseButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    setMobileNavigation(false)
+})
+
+// Kolizje: zwiedzający jest kołem w rzucie, ściany prostokątami.
+const collidesAt = (x, z) => gallery.colliders.some((wall) => {
+    const dx = x - THREE.MathUtils.clamp(x, wall.x - wall.halfX, wall.x + wall.halfX)
+    const dz = z - THREE.MathUtils.clamp(z, wall.z - wall.halfZ, wall.z + wall.halfZ)
+    return dx * dx + dz * dz < visitorRadius * visitorRadius
+})
+
+const velocity = new THREE.Vector3()
+const updateWalk = (deltaTime) => {
+    camera.rotation.set(pitch, yaw, 0, 'YXZ')
+    let forwardInput = 0
+    let sideInput = 0
+    if (navigationActive()) {
+        forwardInput = isTouchDevice ? mobileForward
+            : Number(pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp')) - Number(pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown'))
+        sideInput = isTouchDevice ? mobileSide
+            : Number(pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight')) - Number(pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft'))
+    }
+    forward.set(-Math.sin(yaw), 0, -Math.cos(yaw))
+    right.set(Math.cos(yaw), 0, -Math.sin(yaw))
+    movement.copy(forward).multiplyScalar(forwardInput).addScaledVector(right, sideInput)
+    if (movement.lengthSq() > 1) movement.normalize()
+    const fast = isTouchDevice ? mobileRunning : pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight')
+    movement.multiplyScalar(fast ? fastWalkSpeed : walkSpeed)
+
+    // łagodne ruszanie i zatrzymywanie — spokojny, „muzealny” krok
+    const step = Math.min(deltaTime, 0.05)
+    velocity.lerp(movement, 1 - Math.exp(-step * 9))
+    if (velocity.lengthSq() < 1e-5) return
+    const nextX = camera.position.x + velocity.x * step
+    if (!collidesAt(nextX, camera.position.z)) camera.position.x = nextX
+    else velocity.x = 0
+    const nextZ = camera.position.z + velocity.z * step
+    if (!collidesAt(camera.position.x, nextZ)) camera.position.z = nextZ
+    else velocity.z = 0
+    // delikatne kołysanie głowy przy chodzie
+    walkPhase += velocity.length() * step * 5.2
+    camera.position.y = eyeHeight + Math.sin(walkPhase) * 0.012 * Math.min(velocity.length() / walkSpeed, 1)
+}
+let walkPhase = 0
+
+// ————————————————————————————————————————————————
+// Rysunek w centrum uwagi
+// ————————————————————————————————————————————————
+
+const raycaster = new THREE.Raycaster()
+const center = new THREE.Vector2(0, 0)
+const caption = $('[data-caption]')
+const captionTitle = $('.hud__title')
+const roomLabel = $('[data-room]')
+let focused = null
+
+const pickArtwork = (pointer, maxDistance) => {
+    raycaster.setFromCamera(pointer, camera)
+    raycaster.far = maxDistance
+    const targets = [...gallery.occluders, ...gallery.artworks.map((art) => art.mesh)]
+    const hit = raycaster.intersectObjects(targets, false)[0]
+    if (!hit || hit.object.userData.index === undefined) return null
+    return gallery.artworks[hit.object.userData.index]
+}
+
+let lastFocusCheck = 0
+const updateFocus = (elapsed) => {
+    if (elapsed - lastFocusCheck < 0.1) return
+    lastFocusCheck = elapsed
+    const art = navigationActive() && !isTouchDevice ? pickArtwork(center, 4.5) : null
+    if (art !== focused) {
+        focused = art
+        caption.hidden = !art
+        document.body.classList.toggle('focused', !!art)
+        if (art) {
+            const date = formatDate(art.drawing.date)
+            captionTitle.textContent = art.drawing.title ? art.drawing.title : (date || displayTitle(art.drawing))
+        }
+    }
+    if (gallery.rooms > 1) {
+        roomLabel.textContent = `Sala ${gallery.roomAt(camera.position.x) + 1} z ${gallery.rooms}`
+    } else roomLabel.textContent = ''
+}
+
+// ————————————————————————————————————————————————
+// Powiększenie
+// ————————————————————————————————————————————————
+
+const lightbox = $('.lightbox')
+const lightboxImage = $('.lightbox__image')
+const lightboxNumber = $('.lightbox__number')
+const lightboxTitle = $('.lightbox__title')
+const lightboxDate = $('.lightbox__date')
+let lightboxOpen = false
+let lightboxIndex = 0
+
+const showLightboxItem = (index) => {
+    lightboxIndex = (index + drawings.length) % drawings.length
+    const drawing = drawings[lightboxIndex]
+    lightboxImage.src = imageUrl(drawing, isTouchDevice ? 1600 : 2400)
+    lightboxImage.alt = displayTitle(drawing)
+    lightboxNumber.textContent = `${String(lightboxIndex + 1).padStart(2, '0')} / ${String(drawings.length).padStart(2, '0')}`
+    lightboxTitle.textContent = displayTitle(drawing)
+    lightboxDate.textContent = formatDate(drawing.date)
+}
+
+const openLightbox = (index) => {
+    if (!drawings.length) return
+    lightboxOpen = true
+    showLightboxItem(index)
+    lightbox.hidden = false
+    caption.hidden = true
+    if (document.pointerLockElement) document.exitPointerLock()
+    if (isTouchDevice) mobileControls.classList.remove('active')
+}
+
+const closeLightbox = () => {
+    lightboxOpen = false
+    lightbox.hidden = true
+    lightboxImage.removeAttribute('src')
+    if (isTouchDevice) mobileControls.classList.toggle('active', mobileActive)
+    else {
+        canvas.requestPointerLock()
+        // jeśli przeglądarka odmówi blokady kursora, pokaż panel pauzy
+        window.setTimeout(() => { if (document.pointerLockElement !== canvas && !lightboxOpen) showStartPanel(true) }, 250)
+    }
+}
+
+const stepLightbox = (direction) => showLightboxItem(lightboxIndex + direction)
+
+$('.lightbox__close').addEventListener('click', closeLightbox)
+$('.lightbox__prev').addEventListener('click', () => stepLightbox(-1))
+$('.lightbox__next').addEventListener('click', () => stepLightbox(1))
+lightbox.addEventListener('click', (event) => { if (event.target === lightbox) closeLightbox() })
+
+// ————————————————————————————————————————————————
+// Pętla
+// ————————————————————————————————————————————————
+
+const clock = new THREE.Clock()
+const tick = () => {
+    const delta = clock.getDelta()
+    const elapsed = clock.elapsedTime
+    updateWalk(delta)
+    gallery.stream(camera.position, elapsed)
+    updateFocus(elapsed)
+    renderer.render(scene, camera)
+    window.requestAnimationFrame(tick)
+}
+placeVisitor()
+tick()
+if (isDemo) window.__view = (x, z, y, p = 0) => { camera.position.set(x, eyeHeight, z); yaw = y; pitch = p }
