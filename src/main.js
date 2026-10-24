@@ -117,11 +117,15 @@ const loadCollection = async (firstLoad = false) => {
     }
 }
 
+// Napisy na płótnie (tabliczki, nazwy sal, rolki) nie wymuszają same doczytania czcionek —
+// trzeba je wczytać jawnie, RAZEM z polskimi znakami (osobny zestaw latin-ext),
+// inaczej ą ę ł ś ż… wypadają z czcionki zastępczej.
+const FONT_SAMPLE = 'AaZz09 ąćęłńóśźż ĄĆĘŁŃÓŚŹŻ ↑·—'
 const fontsReady = document.fonts?.load ? Promise.all([
-    document.fonts.load('400 40px "Cormorant Garamond"'),
-    document.fonts.load('italic 400 40px "Cormorant Garamond"'),
-    document.fonts.load('400 20px "Inter"')
-]).catch(() => {}) : Promise.resolve()
+    '400 40px "Cormorant Garamond"', '500 40px "Cormorant Garamond"',
+    'italic 400 40px "Cormorant Garamond"', 'italic 500 40px "Cormorant Garamond"',
+    '300 20px "Inter"', '400 20px "Inter"', '500 20px "Inter"'
+].map((font) => document.fonts.load(font, FONT_SAMPLE))).catch(() => {}) : Promise.resolve()
 fontsReady.then(() => loadCollection(true))
 window.setInterval(() => { if (!document.hidden) loadCollection() }, cfg.refreshInterval * 1000)
 
