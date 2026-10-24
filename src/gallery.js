@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { galleryConfig as cfg } from './config.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
 // ————————————————————————————————————————————————
@@ -105,10 +106,39 @@ const materials = {
     frame: new THREE.MeshStandardMaterial({ color: cfg.frame.color, roughness: 0.45, metalness: 0.1 }),
     mat: new THREE.MeshStandardMaterial({ color: cfg.frame.mat, roughness: 0.95, emissive: 0xfff8ee, emissiveIntensity: 0.06 }),
     matBevel: new THREE.MeshStandardMaterial({ color: 0xd9d4ca, roughness: 0.9 }),
-    fixture: new THREE.MeshStandardMaterial({ color: 0xf7f6f3, roughness: 0.35, metalness: 0.05 }),
+    fixture: new THREE.MeshStandardMaterial({ color: 0xf4f3f0, roughness: 0.32, metalness: 0.08 }),
+    fixtureInner: new THREE.MeshStandardMaterial({ color: 0x2a2927, roughness: 0.6 }),
+    lens: new THREE.MeshBasicMaterial({ color: 0xfff4e2, toneMapped: false }),
+    track: new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 0.4, metalness: 0.1 }),
     glow: new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }),
     placeholder: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 1 })
 }
+
+// ————————————————————————————————————————————————
+// Reflektor szynowy (low-poly, rysowany instancjami: kilka wywołań na całą galerię)
+// ————————————————————————————————————————————————
+// Uchwyt (adapter na szynie + trzpień) obraca się tylko w poziomie,
+// głowica dodatkowo pochyla się w stronę obrazu. Oś głowicy = +Z.
+
+const SPOT_DROP = 0.17   // odległość przegubu od sufitu [m]
+
+const spotMountGeometry = (() => {
+    const adapter = new THREE.BoxGeometry(0.09, 0.03, 0.04, 1, 1, 1).translate(0, -0.03, 0)
+    const stem = new THREE.CylinderGeometry(0.007, 0.007, SPOT_DROP - 0.045, 6, 1, true).translate(0, -0.045 - (SPOT_DROP - 0.045) / 2, 0)
+    return mergeGeometries([adapter, stem])
+})()
+
+const spotHeadGeometry = (() => {
+    const joint = new THREE.SphereGeometry(0.016, 8, 6)
+    const yoke = new THREE.BoxGeometry(0.012, 0.012, 0.05).translate(0, 0, 0.012)
+    const body = new THREE.CylinderGeometry(0.046, 0.04, 0.15, 16, 1, false).rotateX(Math.PI / 2).translate(0, 0, 0.09)
+    const rear = new THREE.CylinderGeometry(0.03, 0.03, 0.035, 10, 1, false).rotateX(Math.PI / 2).translate(0, 0, -0.0)
+    return mergeGeometries([joint, yoke, body, rear])
+})()
+
+// ciemne wnętrze przy wylocie (cienki pierścień) i świecąca soczewka nieco głębiej
+const spotInnerGeometry = new THREE.RingGeometry(0.033, 0.0455, 16, 1).translate(0, 0, 0.1655)
+const spotLensGeometry = new THREE.CircleGeometry(0.033, 16).translate(0, 0, 0.158)
 
 // ————————————————————————————————————————————————
 // Układ sal
@@ -316,8 +346,7 @@ export class Gallery {
         // ——— rysunki ———
         const slots = []
         for (let r = 0; r < this.rooms; r++) slots.push(...roomSlots(r))
-        const fixtureMatrices = []
-        const helper = new THREE.Object3D()
+        const spots = []
 
         this.artworks = drawings.map((drawing, index) => {
             const slot = slots[index]
@@ -363,10 +392,7 @@ export class Gallery {
             holder.add(label)
 
             // oprawa reflektora na suficie
-            helper.position.set(slot.x, H - 0.16, slot.z + (slot.rotY === 0 ? 1.15 : -1.15))
-            helper.lookAt(slot.x, cfg.frame.centerHeight, slot.z)
-            helper.updateMatrix()
-            fixtureMatrices.push(helper.matrix.clone())
+            spots.push({ room: Math.floor(slot.x / W), x: slot.x, z: slot.z + (slot.rotY === 0 ? 1.15 : -1.15), target: new THREE.Vector3(slot.x, cfg.frame.centerHeight, slot.z) })
 
             holder.updateMatrixWorld(true)
             const world = new THREE.Vector3()
@@ -392,16 +418,55 @@ export class Gallery {
             }
         }
 
-        if (fixtureMatrices.length) {
-            const fixtureGeometry = new THREE.CylinderGeometry(0.055, 0.075, 0.2, 18)
-            fixtureGeometry.rotateX(Math.PI / 2)
-            const fixtures = new THREE.InstancedMesh(fixtureGeometry, materials.fixture, fixtureMatrices.length)
-            fixtureMatrices.forEach((matrix, i) => fixtures.setMatrixAt(i, matrix))
-            group.add(fixtures)
-        }
+        if (spots.length) this.addSpots(group, spots)
 
         this.scene.add(group)
         this.lastStreamCheck = -1
+    }
+
+    addSpots(group, spots) {
+        const count = spots.length
+        const mounts = new THREE.InstancedMesh(spotMountGeometry, materials.fixture, count)
+        const heads = new THREE.InstancedMesh(spotHeadGeometry, materials.fixture, count)
+        const inners = new THREE.InstancedMesh(spotInnerGeometry, materials.fixtureInner, count)
+        const lenses = new THREE.InstancedMesh(spotLensGeometry, materials.lens, count)
+        const o = new THREE.Object3D()
+        spots.forEach((spot, i) => {
+            const facing = Math.atan2(spot.target.x - spot.x, spot.target.z - spot.z)
+            o.position.set(spot.x, H, spot.z)
+            o.rotation.set(0, facing, 0)
+            o.updateMatrix()
+            mounts.setMatrixAt(i, o.matrix)
+            o.position.set(spot.x, H - SPOT_DROP, spot.z)
+            o.lookAt(spot.target)
+            o.updateMatrix()
+            heads.setMatrixAt(i, o.matrix)
+            inners.setMatrixAt(i, o.matrix)
+            lenses.setMatrixAt(i, o.matrix)
+        })
+        group.add(mounts, heads, inners, lenses)
+
+        // szyny: jedna na każdy ciąg reflektorów w sali
+        const runs = new Map()
+        for (const spot of spots) {
+            const key = `${spot.room}:${spot.z.toFixed(2)}`
+            const run = runs.get(key) ?? { z: spot.z, min: Infinity, max: -Infinity }
+            run.min = Math.min(run.min, spot.x)
+            run.max = Math.max(run.max, spot.x)
+            runs.set(key, run)
+        }
+        const tracks = new THREE.InstancedMesh(unitBox, materials.track, runs.size)
+        let t = 0
+        for (const run of runs.values()) {
+            const length = run.max - run.min + 0.9
+            o.position.set((run.min + run.max) / 2, H - 0.012, run.z)
+            o.rotation.set(0, 0, 0)
+            o.scale.set(length, 0.024, 0.036)
+            o.updateMatrix()
+            tracks.setMatrixAt(t++, o.matrix)
+            o.scale.set(1, 1, 1)
+        }
+        group.add(tracks)
     }
 
     // Doczytywanie w dwóch krokach: najpierw lekki podgląd (szybko widać wszystkie
