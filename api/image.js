@@ -1,12 +1,12 @@
-import { fileMeta, listFolder, mediaUrl, sendError } from './_drive.js'
+import { fileMeta, listGallery, mediaUrl, sendError } from './_drive.js'
 
-// Lista ID z folderu, trzymana w pamięci instancji przez minutę.
+// Lista ID z folderu galerii i jego podfolderów, trzymana w pamięci instancji przez minutę.
 // (Przy anonimowym kluczu API Drive nie zwraca pola "parents", więc przynależność
 // do folderu sprawdzamy względem listy.)
 let folderIds = { ids: new Set(), at: 0 }
 const inFolder = async (id) => {
     if (Date.now() - folderIds.at > 60000 || !folderIds.ids.has(id)) {
-        folderIds = { ids: new Set((await listFolder()).map((file) => file.id)), at: Date.now() }
+        folderIds = { ids: new Set((await listGallery()).flatMap((room) => room.files.map((file) => file.id))), at: Date.now() }
     }
     return folderIds.ids.has(id)
 }

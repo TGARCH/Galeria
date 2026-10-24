@@ -26,14 +26,14 @@ export const driveJson = async (url) => {
     return response.json()
 }
 
-export const listFolder = async () => {
-    const { key, folder } = config()
+const listChildren = async (parent, mimeFilter, fields) => {
+    const { key } = config()
     const files = []
     let pageToken = ''
     do {
         const params = new URLSearchParams({
-            q: `'${folder}' in parents and mimeType contains 'image/' and trashed = false`,
-            fields: 'nextPageToken, files(id, name, description, createdTime, imageMediaMetadata(width, height, rotation))',
+            q: `'${parent}' in parents and ${mimeFilter} and trashed = false`,
+            fields: `nextPageToken, files(${fields})`,
             orderBy: 'createdTime',
             pageSize: '1000',
             supportsAllDrives: 'true',
@@ -46,6 +46,30 @@ export const listFolder = async () => {
         pageToken = page.nextPageToken || ''
     } while (pageToken)
     return files
+}
+
+const IMAGE_FIELDS = 'id, name, description, createdTime, imageMediaMetadata(width, height, rotation)'
+export const listImages = (folder) => listChildren(folder, "mimeType contains 'image/'", IMAGE_FIELDS)
+
+// "2 Grupa środowa" → { order: 2, title: "Grupa środowa" }; bez numeru — alfabetycznie, po numerowanych
+const parseFolderName = (name) => {
+    const match = /^(\d+)[\s._)-]+(.+)$/.exec(name.trim())
+    return match ? { order: Number(match[1]), title: match[2].trim() } : { order: Infinity, title: name.trim() }
+}
+
+// Sale galerii: pliki luzem w folderze głównym (pierwsza sala) + po jednej sali na podfolder.
+// Puste foldery są pomijane.
+export const listGallery = async () => {
+    const { folder } = config()
+    const [loose, subfolders] = await Promise.all([
+        listImages(folder),
+        listChildren(folder, "mimeType = 'application/vnd.google-apps.folder'", 'id, name')
+    ])
+    const sorted = subfolders
+        .map((sub) => ({ id: sub.id, ...parseFolderName(sub.name) }))
+        .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, 'pl'))
+    const rooms = await Promise.all(sorted.map(async (sub) => ({ id: sub.id, title: sub.title, files: await listImages(sub.id) })))
+    return [{ id: folder, title: null, files: loose }, ...rooms].filter((room) => room.files.length)
 }
 
 export const fileMeta = async (id) => {

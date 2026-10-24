@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { inject } from '@vercel/analytics'
 import { galleryConfig as cfg } from './config.js'
 import { Gallery } from './gallery.js'
-import { fetchDrawings, imageUrl, isDemo, displayTitle, formatDate } from './drawings.js'
+import { fetchRooms, imageUrl, isDemo, displayTitle, formatDate } from './drawings.js'
 
 inject()
 
@@ -49,7 +49,9 @@ window.addEventListener('resize', () => {
 })
 
 const gallery = new Gallery(scene, renderer)
-let drawings = []
+let drawings = []        // wszystkie rysunki po kolei (sala po sali) — dla powiększenia
+let roomOf = []          // indeks sali dla każdego rysunku
+let signature = ''
 
 // ————————————————————————————————————————————————
 // Kolekcja z Dysku
@@ -69,19 +71,22 @@ const placeVisitor = () => {
     pitch = 0
 }
 
-const applyDrawings = (list, firstLoad = false) => {
-    const changed = list.length !== drawings.length || list.some((d, i) => d.id !== drawings[i]?.id || d.title !== drawings[i]?.title)
-    if (!changed && !firstLoad) return
-    drawings = list
-    gallery.build(drawings)
+const applyRooms = (rooms, firstLoad = false) => {
+    const next = JSON.stringify(rooms.map((room) => [room.title, room.drawings.map((d) => [d.id, d.title])]))
+    if (next === signature && !firstLoad) return
+    signature = next
+    drawings = rooms.flatMap((room) => room.drawings)
+    roomOf = rooms.flatMap((room, r) => room.drawings.map(() => r))
+    gallery.build(rooms)
     countLabel.textContent = drawings.length ? pluralWorks(drawings.length) : 'Kolekcja jest pusta'
     if (firstLoad) placeVisitor()
 }
 
 const loadCollection = async (firstLoad = false) => {
     try {
-        const list = await fetchDrawings()
-        applyDrawings(list, firstLoad)
+        const rooms = await fetchRooms()
+        applyRooms(rooms, firstLoad)
+        const list = drawings
         notice.hidden = !isDemo
         if (isDemo) notice.textContent = 'Tryb podglądu: szkice demonstracyjne zamiast rysunków z Dysku.'
         else if (!list.length) {
@@ -91,7 +96,7 @@ const loadCollection = async (firstLoad = false) => {
     } catch (error) {
         console.error(error)
         if (firstLoad) {
-            applyDrawings([], true)
+            applyRooms([], true)
             countLabel.textContent = 'Nie udało się wczytać kolekcji'
             notice.hidden = false
             notice.textContent = error.message
@@ -351,7 +356,8 @@ const updateFocus = (elapsed) => {
         }
     }
     if (gallery.rooms > 1) {
-        roomLabel.textContent = `Sala ${gallery.roomAt(camera.position.x) + 1} z ${gallery.rooms}`
+        const room = gallery.roomAt(camera.position.x)
+        roomLabel.textContent = `Sala ${room + 1} · ${gallery.roomTitles[room]}`
     } else roomLabel.textContent = ''
 }
 
@@ -374,7 +380,8 @@ const showLightboxItem = (index) => {
     lightboxImage.alt = displayTitle(drawing)
     lightboxNumber.textContent = `${String(lightboxIndex + 1).padStart(2, '0')} / ${String(drawings.length).padStart(2, '0')}`
     lightboxTitle.textContent = displayTitle(drawing)
-    lightboxDate.textContent = formatDate(drawing.date)
+    const roomTitle = gallery.rooms > 1 ? gallery.roomTitles[roomOf[lightboxIndex]] : ''
+    lightboxDate.textContent = [formatDate(drawing.date), roomTitle].filter(Boolean).join(' · ')
 }
 
 const openLightbox = (index) => {
@@ -422,4 +429,4 @@ const tick = () => {
 }
 placeVisitor()
 tick()
-if (isDemo) window.__view = (x, z, y, p = 0) => { camera.position.set(x, eyeHeight, z); yaw = y; pitch = p }
+if (isDemo) window.__view = (x, z, y, p = 0, h = eyeHeight) => { camera.position.set(x, h, z); yaw = y; pitch = p; camera.far = 200; camera.updateProjectionMatrix() }

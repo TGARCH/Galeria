@@ -4,13 +4,14 @@ import * as THREE from 'three'
 // Tryb ?demo generuje szkice w przeglądarce — do podglądu bez połączenia z Dyskiem.
 export const isDemo = new URLSearchParams(window.location.search).has('demo')
 
-export const fetchDrawings = async () => {
-    if (isDemo) return demoDrawings()
+// Zwraca sale: [{ id, title, drawings: [...] }]. Sala z plikami luzem ma title = null.
+export const fetchRooms = async () => {
+    if (isDemo) return demoRooms()
     const response = await fetch('/api/drawings', { cache: 'no-store' })
     let body = null
     try { body = await response.json() } catch { /* brak JSON */ }
     if (!response.ok) throw new Error(body?.error || `Błąd ${response.status}`)
-    return body.drawings
+    return body.rooms
 }
 
 export const imageUrl = (drawing, width) => drawing.demo
@@ -35,8 +36,7 @@ const demoTitles = ['Studium dłoni', 'Portret w półprofilu', 'Akt siedzący',
     'Szkic głowy', 'Postać w ruchu', 'Kontrapost', 'Portret kobiety', 'Draperia', 'Studium światła',
     'Pejzaż z drzewem', 'Głowa starca', 'Akt leżący', 'Dłonie splecione', 'Profil', 'Szkic z natury']
 
-const demoDrawings = () => {
-    const count = Number(new URLSearchParams(window.location.search).get('demo')) || 22
+const demoDrawings = (count) => {
     return Array.from({ length: count }, (_, index) => {
         const rand = random(index + 7)
         const portrait = rand() > 0.3
@@ -102,6 +102,19 @@ const demoCanvas = (drawing) => {
     ctx.fillText('T.G.', canvas.width - 90, canvas.height - 40)
     demoCache.set(drawing.id, canvas)
     return canvas
+}
+
+const demoRooms = () => {
+    const count = Number(new URLSearchParams(window.location.search).get('demo')) || 40
+    const all = demoDrawings(count)
+    const sizes = [6, 22, Math.max(0, count - 28)]
+    const titles = ['Grupa wtorkowa', 'Grupa środowa', 'Archiwalne prace']
+    let start = 0
+    return sizes.map((size, i) => {
+        const room = { id: `demo-room-${i}`, title: titles[i], drawings: all.slice(start, start + size) }
+        start += size
+        return room
+    }).filter((room) => room.drawings.length)
 }
 
 // ——— Opisy ———

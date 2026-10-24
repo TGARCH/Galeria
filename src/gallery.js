@@ -146,25 +146,40 @@ const spotLensGeometry = new THREE.CircleGeometry(0.033, 16).translate(0, 0, 0.1
 
 const { width: W, depth: D, height: H, wall: T, doorway } = cfg.room
 const P = cfg.partition
-const SLOTS_PER_ROOM = 16
 
-export const roomCountFor = (count) => Math.max(1, Math.ceil(count / SLOTS_PER_ROOM))
+// Każda sala ma 12 m szerokości. Gdy ma więcej niż 16 rysunków, rozrasta się w głąb
+// o kolejne moduły 12 × 10 m (każdy z własną ścianką działową i miejscami na ścianach
+// bocznych). Przejścia między salami są w pierwszym module, przy ścianie północnej.
+const SLOTS_FIRST_MODULE = 16
+const SLOTS_NEXT_MODULE = 12
+const DOOR_Z = -D / 2 + 2.5
+export const modulesFor = (count) => 1 + Math.ceil(Math.max(0, count - SLOTS_FIRST_MODULE) / SLOTS_NEXT_MODULE)
 
-// Kolejność miejsc w sali: ściana północna (→), ścianka działowa od północy (←),
-// ścianka od południa (→), ściana południowa (←). Kolejne rysunki zajmują kolejne
-// miejsca, więc nowe pliki z Dysku dochodzą na końcu, a starsze nie zmieniają miejsc.
-const roomSlots = (room) => {
+// Kolejność miejsc: ściana północna (→), w każdym module ścianka działowa (← od północy,
+// → od południa) i w modułach dalszych ściany boczne (zachodnia ↓, wschodnia ↑),
+// na końcu ściana południowa (←). Nowe pliki trafiają na kolejne wolne miejsca.
+const roomSlots = (room, modules) => {
     const x0 = room * W
+    const z0 = -D / 2
     const slots = []
-    const wallSpan = W - 2.2
-    const wallStep = wallSpan / 5
+    const add = (x, z, rotY, span) => slots.push({ x, z, rotY, span, room })
+    const wallStep = (W - 2.2) / 5
     const partStep = (P.length - 0.6) / 3
-    const north = -D / 2 + T / 2
-    const south = D / 2 - T / 2
-    for (let k = 0; k < 5; k++) slots.push({ x: x0 + 1.1 + (k + 0.5) * wallStep, z: north, rotY: 0, span: wallStep })
-    for (let k = 2; k >= 0; k--) slots.push({ x: x0 + W / 2 - P.length / 2 + 0.3 + (k + 0.5) * partStep, z: -P.thickness / 2, rotY: Math.PI, span: partStep })
-    for (let k = 0; k < 3; k++) slots.push({ x: x0 + W / 2 - P.length / 2 + 0.3 + (k + 0.5) * partStep, z: P.thickness / 2, rotY: 0, span: partStep })
-    for (let k = 4; k >= 0; k--) slots.push({ x: x0 + 1.1 + (k + 0.5) * wallStep, z: south, rotY: Math.PI, span: wallStep })
+    const sideStep = (D - 1.6) / 3
+    for (let k = 0; k < 5; k++) add(x0 + 1.1 + (k + 0.5) * wallStep, z0 + T / 2, 0, wallStep)
+    for (let m = 0; m < modules; m++) {
+        const zc = z0 + m * D + D / 2
+        const px = x0 + W / 2 - P.length / 2 + 0.3
+        for (let k = 2; k >= 0; k--) add(px + (k + 0.5) * partStep, zc - P.thickness / 2, Math.PI, partStep)
+        for (let k = 0; k < 3; k++) add(px + (k + 0.5) * partStep, zc + P.thickness / 2, 0, partStep)
+        if (m > 0) {
+            const top = z0 + m * D + 0.8
+            for (let k = 0; k < 3; k++) add(x0 + T / 2, top + (k + 0.5) * sideStep, Math.PI / 2, sideStep)
+            for (let k = 2; k >= 0; k--) add(x0 + W - T / 2, top + (k + 0.5) * sideStep, -Math.PI / 2, sideStep)
+        }
+    }
+    const south = z0 + modules * D - T / 2
+    for (let k = 4; k >= 0; k--) add(x0 + 1.1 + (k + 0.5) * wallStep, south, Math.PI, wallStep)
     return slots
 }
 
@@ -245,6 +260,21 @@ const entranceCanvas = (count) => {
     return texture
 }
 
+const roomTitleCanvas = (title) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 2048
+    canvas.height = 384
+    const ctx = canvas.getContext('2d')
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#2a2723'
+    ctx.font = '400 170px "Cormorant Garamond", Georgia, serif'
+    ctx.fillText(title, 1024, 240, 1960)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.anisotropy = 8
+    return texture
+}
+
 // ————————————————————————————————————————————————
 // Galeria
 // ————————————————————————————————————————————————
@@ -264,7 +294,8 @@ export class Gallery {
         this.lastStreamCheck = -1
     }
 
-    build(drawings) {
+    // rooms: [{ id, title, drawings }] — jedna sala na podfolder Dysku
+    build(rooms) {
         const previous = new Map(this.artworks.map((art) => [art.drawing.id, art]))
         const reused = new Set()
         if (this.group) this.scene.remove(this.group)
@@ -272,8 +303,16 @@ export class Gallery {
         this.group = group
         this.colliders = []
         this.occluders = []
-        this.rooms = roomCountFor(drawings.length)
+        this.titledMaterials?.forEach((material) => { material.map?.dispose(); material.dispose() })
+        this.titledMaterials = []
+        if (!rooms.length) rooms = [{ id: 'empty', title: null, drawings: [] }]
+        this.rooms = rooms.length
+        this.roomTitles = rooms.map((room) => room.title || cfg.subtitle)
+        const modules = rooms.map((room) => modulesFor(room.drawings.length))
+        const depthOf = (r) => modules[r] * D
         const length = this.rooms * W
+        const maxDepth = Math.max(...modules) * D
+        const z0 = -D / 2
 
         // ——— architektura ———
         const addBox = (x, y, z, sx, sy, sz, material, collide = true) => {
@@ -291,65 +330,84 @@ export class Gallery {
             addBox(x, y0 + height / 2, z, sx, height, sz, materials.wall, y0 === 0)
             if (y0 === 0) addBox(x, 0.045, z, sx + (sx > sz ? 0 : 0.02), 0.09, sz + (sz > sx ? 0 : 0.02), materials.baseboard, false)
         }
+        // ściana wzdłuż osi Z od za do zb
+        const wallAlongZ = (x, za, zb, height, y0) => addWall(x, (za + zb) / 2, T, zb - za, height, y0)
 
-        addWall(length / 2, -D / 2, length + T, T)          // północ
-        addWall(length / 2, D / 2, length + T, T)           // południe
-        addWall(0, 0, T, D)                                 // wejście (zachód)
-        addWall(length, 0, T, D)                            // koniec (wschód)
+        addWall(length / 2, z0, length + T, T)                         // północ — wspólna dla wszystkich sal
         const doorHeight = 3.1
-        for (let r = 1; r < this.rooms; r++) {
+        for (let r = 0; r <= this.rooms; r++) {
             const x = r * W
-            const segment = (D - doorway) / 2
-            addWall(x, -D / 2 + segment / 2, T, segment)
-            addWall(x, D / 2 - segment / 2, T, segment)
-            addWall(x, 0, T, doorway, H - doorHeight, doorHeight)
+            const zEnd = z0 + Math.max(r > 0 ? depthOf(r - 1) : 0, r < this.rooms ? depthOf(r) : 0)
+            if (r === 0 || r === this.rooms) {
+                wallAlongZ(x, z0, zEnd)
+            } else {
+                wallAlongZ(x, z0, DOOR_Z - doorway / 2)
+                wallAlongZ(x, DOOR_Z + doorway / 2, zEnd)
+                wallAlongZ(x, DOOR_Z - doorway / 2, DOOR_Z + doorway / 2, H - doorHeight, doorHeight)
+            }
         }
         for (let r = 0; r < this.rooms; r++) {
-            addWall(r * W + W / 2, 0, P.length, P.thickness, P.height)
-            // górna krawędź ścianki działowej
-            addBox(r * W + W / 2, P.height + 0.004, 0, P.length + 0.002, 0.008, P.thickness + 0.002, materials.baseboard, false)
+            const x0 = r * W
+            addWall(x0 + W / 2, z0 + depthOf(r), W + T, T)                // południe tej sali
+            for (let m = 0; m < modules[r]; m++) {
+                const zc = z0 + m * D + D / 2
+                addWall(x0 + W / 2, zc, P.length, P.thickness, P.height)
+                addBox(x0 + W / 2, P.height + 0.004, zc, P.length + 0.002, 0.008, P.thickness + 0.002, materials.baseboard, false)
+                // świetliki
+                for (const px of [-3.4, 0, 3.4]) {
+                    for (const pz of [-2.6, 2.6]) {
+                        const panel = new THREE.Mesh(unitPlane, materials.lightPanel)
+                        panel.rotation.x = Math.PI / 2
+                        panel.scale.set(2.6, 1.5, 1)
+                        panel.position.set(x0 + W / 2 + px, H - 0.005, zc + pz)
+                        group.add(panel)
+                    }
+                }
+            }
+            // nazwa sali nad wejściem, czytelna z poprzedniej sali
+            if (r > 0) {
+                const material = new THREE.MeshBasicMaterial({ map: roomTitleCanvas(this.roomTitles[r]), transparent: true })
+                this.titledMaterials.push(material)
+                const sign = new THREE.Mesh(unitPlane, material)
+                sign.scale.set(3.4, 3.4 * 384 / 2048, 1)
+                sign.position.set(x0 - T / 2 - 0.006, (doorHeight + H) / 2, DOOR_Z)
+                sign.rotation.y = -Math.PI / 2
+                group.add(sign)
+            }
         }
 
+        // podłoga i sufit: jeden prostokąt obejmujący wszystkie sale
         const floor = new THREE.Mesh(unitPlane, materials.floor)
         floor.rotation.x = -Math.PI / 2
-        floor.scale.set(length, D, 1)
-        floor.position.set(length / 2, 0, 0)
-        floorTexture.repeat.set(length / FLOOR_TILE, D / FLOOR_TILE)
+        floor.scale.set(length, maxDepth, 1)
+        floor.position.set(length / 2, 0, z0 + maxDepth / 2)
+        floorTexture.repeat.set(length / FLOOR_TILE, maxDepth / FLOOR_TILE)
         group.add(floor)
 
         const ceiling = new THREE.Mesh(unitPlane, materials.ceiling)
         ceiling.rotation.x = Math.PI / 2
-        ceiling.scale.set(length, D, 1)
-        ceiling.position.set(length / 2, H, 0)
+        ceiling.scale.set(length, maxDepth, 1)
+        ceiling.position.set(length / 2, H, z0 + maxDepth / 2)
         group.add(ceiling)
 
-        // świetliki w suficie
-        for (let r = 0; r < this.rooms; r++) {
-            for (const px of [-3.4, 0, 3.4]) {
-                for (const pz of [-2.6, 2.6]) {
-                    const panel = new THREE.Mesh(unitPlane, materials.lightPanel)
-                    panel.rotation.x = Math.PI / 2
-                    panel.scale.set(2.6, 1.5, 1)
-                    panel.position.set(r * W + W / 2 + px, H - 0.005, pz)
-                    group.add(panel)
-                }
-            }
-        }
-
         // napis przy wejściu
-        const entrance = new THREE.Mesh(unitPlane, new THREE.MeshBasicMaterial({ map: entranceCanvas(drawings.length), transparent: true }))
+        const total = rooms.reduce((sum, room) => sum + room.drawings.length, 0)
+        const entranceMaterial = new THREE.MeshBasicMaterial({ map: entranceCanvas(total), transparent: true })
+        this.titledMaterials.push(entranceMaterial)
+        const entrance = new THREE.Mesh(unitPlane, entranceMaterial)
         entrance.scale.set(4.6, 4.6 * 720 / 2048, 1)
         entrance.position.set(T / 2 + 0.005, 2.05, 0)
         entrance.rotation.y = Math.PI / 2
         group.add(entrance)
 
         // ——— rysunki ———
-        const slots = []
-        for (let r = 0; r < this.rooms; r++) slots.push(...roomSlots(r))
+        const placed = rooms.flatMap((room, r) => {
+            const slots = roomSlots(r, modules[r])
+            return room.drawings.map((drawing, i) => ({ drawing, slot: slots[i], number: i + 1 }))
+        })
         const spots = []
 
-        this.artworks = drawings.map((drawing, index) => {
-            const slot = slots[index]
+        this.artworks = placed.map(({ drawing, slot, number }, index) => {
             const size = frameSize(drawing, slot.span)
             const holder = new THREE.Group()
             holder.position.set(slot.x, cfg.frame.centerHeight, slot.z)
@@ -392,7 +450,8 @@ export class Gallery {
             holder.add(label)
 
             // oprawa reflektora na suficie
-            spots.push({ room: Math.floor(slot.x / W), x: slot.x, z: slot.z + (slot.rotY === 0 ? 1.15 : -1.15), target: new THREE.Vector3(slot.x, cfg.frame.centerHeight, slot.z) })
+            const nx = Math.round(Math.sin(slot.rotY)), nz = Math.round(Math.cos(slot.rotY))
+            spots.push({ room: slot.room, x: slot.x + nx * 1.15, z: slot.z + nz * 1.15, alongX: nz !== 0, target: new THREE.Vector3(slot.x, cfg.frame.centerHeight, slot.z) })
 
             holder.updateMatrixWorld(true)
             const world = new THREE.Vector3()
@@ -401,7 +460,7 @@ export class Gallery {
 
             art.userData.index = index
             return {
-                drawing, index, mesh: art, material: artMaterial, label, holder, world, normal,
+                drawing, index, number, room: slot.room, mesh: art, material: artMaterial, label, holder, world, normal,
                 level: old?.level ?? 0, loadingLevel: 0, failures: 0, retryAt: 0,
                 labelReady: false
             }
@@ -449,19 +508,27 @@ export class Gallery {
         // szyny: jedna na każdy ciąg reflektorów w sali
         const runs = new Map()
         for (const spot of spots) {
-            const key = `${spot.room}:${spot.z.toFixed(2)}`
-            const run = runs.get(key) ?? { z: spot.z, min: Infinity, max: -Infinity }
-            run.min = Math.min(run.min, spot.x)
-            run.max = Math.max(run.max, spot.x)
+            const line = spot.alongX ? spot.z : spot.x
+            const pos = spot.alongX ? spot.x : spot.z
+            const key = `${spot.room}:${spot.alongX ? 'x' : 'z'}:${line.toFixed(2)}`
+            const run = runs.get(key) ?? { alongX: spot.alongX, line, min: Infinity, max: -Infinity }
+            run.min = Math.min(run.min, pos)
+            run.max = Math.max(run.max, pos)
             runs.set(key, run)
         }
         const tracks = new THREE.InstancedMesh(unitBox, materials.track, runs.size)
         let t = 0
         for (const run of runs.values()) {
             const length = run.max - run.min + 0.9
-            o.position.set((run.min + run.max) / 2, H - 0.012, run.z)
+            const mid = (run.min + run.max) / 2
+            if (run.alongX) {
+                o.position.set(mid, H - 0.012, run.line)
+                o.scale.set(length, 0.024, 0.036)
+            } else {
+                o.position.set(run.line, H - 0.012, mid)
+                o.scale.set(0.036, 0.024, length)
+            }
             o.rotation.set(0, 0, 0)
-            o.scale.set(length, 0.024, 0.036)
             o.updateMatrix()
             tracks.setMatrixAt(t++, o.matrix)
             o.scale.set(1, 1, 1)
@@ -530,7 +597,7 @@ export class Gallery {
 
     makeLabel(art) {
         art.labelReady = true
-        art.label.material = new THREE.MeshBasicMaterial({ map: labelCanvas(art.drawing, art.index + 1) })
+        art.label.material = new THREE.MeshBasicMaterial({ map: labelCanvas(art.drawing, art.number) })
         art.label.visible = true
     }
 
@@ -539,6 +606,6 @@ export class Gallery {
     }
 
     get spawn() {
-        return { x: 1.7, z: 3.4, yaw: -Math.PI / 2 + 0.42 }
+        return { x: 1.4, z: DOOR_Z + 0.6, yaw: -Math.PI / 2 + 0.3 }
     }
 }

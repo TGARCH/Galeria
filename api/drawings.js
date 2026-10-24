@@ -1,4 +1,4 @@
-import { listFolder, sendError } from './_drive.js'
+import { listGallery, sendError } from './_drive.js'
 
 // "Portret Ani_2026-03.jpg" → "Portret Ani 2026-03"
 // Nazwy ze skanera ("20261022161541_001.jpg") nie są tytułami — z nich bierzemy tylko datę.
@@ -12,8 +12,7 @@ const titleFromName = (name) => {
 
 export default async function handler(req, res) {
     try {
-        const files = await listFolder()
-        const drawings = files.map((file) => {
+        const toDrawing = (file) => {
             const meta = file.imageMediaMetadata || {}
             const rotated = meta.rotation === 1 || meta.rotation === 3
             const { title, date } = titleFromName(file.name)
@@ -26,10 +25,11 @@ export default async function handler(req, res) {
                 width: (rotated ? meta.height : meta.width) || null,
                 height: (rotated ? meta.width : meta.height) || null
             }
-        })
+        }
+        const rooms = (await listGallery()).map((room) => ({ id: room.id, title: room.title, drawings: room.files.map(toDrawing) }))
         // Krótki cache na CDN: nowe pliki z Dysku pojawiają się w galerii w ciągu ~minuty.
         res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300')
-        res.status(200).json({ drawings, updated: new Date().toISOString() })
+        res.status(200).json({ rooms, updated: new Date().toISOString() })
     } catch (error) {
         sendError(res, error)
     }
