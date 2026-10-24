@@ -442,7 +442,13 @@ export class Gallery {
         }
         const addWall = (x, z, sx, sz, height = H, y0 = 0) => {
             addBox(x, y0 + height / 2, z, sx, height, sz, materials.wall, y0 === 0)
-            if (y0 === 0) addBox(x, 0.045, z, sx + (sx > sz ? 0 : 0.02), 0.09, sz + (sz > sx ? 0 : 0.02), materials.baseboard, false)
+            // listwa: 11 cm, wystaje 2 cm i obejmuje końce ściany — żadna jej ściana nie leży
+            // w płaszczyźnie ściany ani podłogi (inaczej z daleka migocze). Listwy ścian
+            // wzdłuż X i Z wystają o różną grubość, żeby nie nakładały się płasko w narożnikach.
+            if (y0 === 0) {
+                const out = sx > sz ? 0.018 : 0.022
+                addBox(x, 0.057, z, sx + 2 * out, 0.11, sz + 2 * out, materials.baseboard, false)
+            }
         }
         // ściana wzdłuż osi Z od za do zb
         const wallAlongZ = (x, za, zb, height, y0) => addWall(x, (za + zb) / 2, T, zb - za, height, y0)
@@ -476,7 +482,7 @@ export class Gallery {
             addWall(x0 + W / 2, half, W + T, T)                           // południe
             for (const part of partitions) {
                 addWall(part.x, part.z, part.sx, part.sz, P.height)
-                addBox(part.x, P.height + 0.004, part.z, part.sx + 0.002, 0.008, part.sz + 0.002, materials.baseboard, false)
+                addBox(part.x, P.height + 0.01, part.z, part.sx + 0.03, 0.02, part.sz + 0.03, materials.baseboard, false)   // nakrywa ścianki
             }
             // świetliki: rzędy co ok. 5 m
             const rows = Math.max(2, Math.round((2 * half - 5) / 5) + 1)
