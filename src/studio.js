@@ -1,11 +1,15 @@
-import { FORMATS, SCENARIOS, estimateDuration } from './reel.js'
+import { FORMATS, PHOTO_FORMATS, SCENARIOS, estimateDuration } from './reel.js'
+import { zipSync } from 'fflate'
 import { displayTitle, formatDate, imageUrl, isDemo } from './drawings.js'
 
 // Panel „Studio” — widoczny tylko z ważnym dostępem (api/studio).
 // Kroki: 1. format → 2. rodzaj prezentacji → 3. sale (wiele) → 4. prace (wiele, z miniaturami).
 
 const MAX_ARTS = 24
-const AUTO_PER_ROOM = { newWork: 0, room: 5, walk: 3 }
+const AUTO_PER_ROOM = { newWork: 0, room: 5, walk: 3, photos: 0 }
+const KINDS = { ...SCENARIOS, photos: { label: 'Zdjęcia do postów', hint: 'każda praca w 3 ujęciach: z bliska, z dystansu, z 5 m — bez napisów' } }
+const formatChoices = (kind) => Object.entries(kind === 'photos' ? PHOTO_FORMATS : FORMATS).map(([k, v], i) => `
+    <label class="studio-choice"><input type="radio" name="studio-format" value="${k}"${i === 0 ? ' checked' : ''}><span><strong>${k}</strong><small>${escapeHtml(v.label.split('—')[1] || '')}</small></span></label>`).join('')
 const escapeHtml = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 const formatTime = (s) => s < 60 ? `${Math.round(s)} s` : `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s`
 
@@ -36,13 +40,11 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             <p class="studio-eyebrow">Studio · filmy do mediów społecznościowych</p>
             <section class="studio-step">
                 <h3><b>1</b> Format</h3>
-                <div class="studio-choices" data-format>${Object.entries(FORMATS).map(([k, v], i) => `
-                    <label class="studio-choice"><input type="radio" name="studio-format" value="${k}"${i === 0 ? ' checked' : ''}><span><strong>${k}</strong><small>${escapeHtml(v.label.split('—')[1] || '')}</small></span></label>`).join('')}
-                </div>
+                <div class="studio-choices" data-format></div>
             </section>
             <section class="studio-step">
                 <h3><b>2</b> Rodzaj prezentacji</h3>
-                <div class="studio-choices" data-scenario>${Object.entries(SCENARIOS).map(([k, v], i) => `
+                <div class="studio-choices studio-choices--4" data-scenario>${Object.entries(KINDS).map(([k, v], i) => `
                     <label class="studio-choice"><input type="radio" name="studio-scenario" value="${k}"${i === 0 ? ' checked' : ''}><span><strong>${v.label}</strong><small>${v.hint}</small></span></label>`).join('')}
                 </div>
             </section>
@@ -60,6 +62,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
                 <button type="button" data-record class="primary">Nagraj film</button>
             </div>
             <p class="studio-status" data-status></p>
+            <div class="studio-results" data-results hidden></div>
             <div class="studio-footer">
                 <button type="button" data-close>Zamknij</button>
                 <button type="button" data-logout>Wyloguj ze studia</button>
@@ -76,12 +79,29 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
     const roomsBox = $('[data-rooms]')
     const artsBox = $('[data-arts]')
     const status = $('[data-status]')
+    const resultsBox = $('[data-results]')
+    const formatBox = $('[data-format]')
+    let photoResults = []
     const selectedArts = new Set()
     const selectedRooms = new Set()
 
     const scenario = () => panel.querySelector('input[name="studio-scenario"]:checked').value
     const format = () => panel.querySelector('input[name="studio-format"]:checked').value
     const roomArts = (room) => gallery.artworks.filter((a) => a.room === room)
+    // format i przyciski zależne od rodzaju (film / zdjęcia)
+    const syncKind = () => {
+        const photos = scenario() === 'photos'
+        const current = panel.querySelector('input[name="studio-format"]:checked')?.value
+        const list = photos ? PHOTO_FORMATS : FORMATS
+        if (formatBox.dataset.kind !== String(photos)) {
+            formatBox.innerHTML = formatChoices(photos ? 'photos' : 'video')
+            formatBox.dataset.kind = String(photos)
+            const keep = current && list[current] && formatBox.querySelector(`input[value="${current}"]`)
+            if (keep) keep.checked = true
+        }
+        $('[data-preview]').hidden = photos
+        $('[data-record]').textContent = photos ? 'Utwórz zdjęcia' : 'Nagraj film'
+    }
     const newest = (arts) => [...arts].sort((a, b) => String(b.drawing.created || '').localeCompare(String(a.drawing.created || '')))
 
     // równomiernie rozłożone prace z sali (różne ściany)
@@ -90,7 +110,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
     const autoSelect = () => {
         selectedArts.clear()
         const kind = scenario()
-        if (kind === 'newWork') {
+        if (kind === 'newWork' || kind === 'photos') {
             const pool = newest(gallery.artworks.filter((a) => selectedRooms.has(a.room)))
             pool.slice(0, 3).forEach((a) => selectedArts.add(a.drawing.id))
         } else {
@@ -120,7 +140,8 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
 
     const updateCount = () => {
         const n = selectedArts.size
-        $('[data-art-count]').textContent = n ? `— wybrano ${n}, film ok. ${formatTime(estimateDuration(n))}` : '— zaznacz co najmniej jedną'
+        const info = scenario() === 'photos' ? `${n * 3} zdjęć` : `film ok. ${formatTime(estimateDuration(n))}`
+        $('[data-art-count]').textContent = n ? `— wybrano ${n}, ${info}` : '— zaznacz co najmniej jedną'
     }
 
     // prace spoza wybranych sal odpadają
@@ -133,7 +154,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
         if (event.target.checked) {
             selectedRooms.add(room)
             const kind = scenario()
-            if (kind !== 'newWork') spread(roomArts(room), AUTO_PER_ROOM[kind]).forEach((a) => selectedArts.add(a.drawing.id))
+            if (AUTO_PER_ROOM[kind]) spread(roomArts(room), AUTO_PER_ROOM[kind]).forEach((a) => selectedArts.add(a.drawing.id))
         } else selectedRooms.delete(room)
         pruneArts()
         renderRooms()
@@ -155,6 +176,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             selectedRooms.clear()
             selectedRooms.add(first)
         }
+        syncKind()
         autoSelect()
         renderRooms()
         renderArts()
@@ -174,6 +196,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             selectedRooms.add(latest ? latest.room : 0)
             autoSelect()
         }
+        syncKind()
         renderRooms()
         renderArts()
         status.textContent = ''
@@ -233,8 +256,55 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
         else if (result.error) status.textContent = 'Nie udało się przygotować trasy — zmień wybór prac.'
         else status.textContent = result.completed ? 'Podgląd zakończony.' : 'Przerwano.'
     }
+    const makePhotos = async () => {
+        if (!selectedArts.size) { status.textContent = 'Zaznacz prace (krok 4).'; return }
+        photoResults.forEach((r) => URL.revokeObjectURL(r.url))
+        photoResults = []
+        resultsBox.hidden = true
+        panel.hidden = true
+        button.hidden = true
+        badge.hidden = false
+        badge.textContent = 'Przygotowanie…'
+        beforeStart()
+        const fmt = format()
+        try {
+            photoResults = await reel.photos({
+                format: fmt,
+                artIds: [...selectedArts],
+                renderFrame: reel.renderFrame,
+                onLoading: (done, total) => { badge.textContent = `Wczytywanie prac ${done} / ${total}…` },
+                onProgress: (done, total) => { badge.textContent = `Zdjęcia ${done} / ${total}…` }
+            })
+        } catch (error) {
+            console.error(error)
+            status.textContent = 'Nie udało się utworzyć zdjęć.'
+        }
+        badge.hidden = true
+        button.hidden = false
+        panel.hidden = false
+        if (!photoResults.length) return
+        const stamp = new Date().toISOString().slice(0, 10)
+        resultsBox.innerHTML = `<div class="studio-results__head"><span>${photoResults.length} zdjęć · ${fmt}</span><button type="button" class="primary" data-zip>Pobierz wszystkie (ZIP)</button></div>
+            <div class="studio-results__grid">${photoResults.map((r) => `<a href="${r.url}" download="${r.name}" title="Pobierz ${r.name}"><img src="${r.url}" alt=""></a>`).join('')}</div>
+            <p class="studio-results__hint">Kliknij zdjęcie, żeby pobrać pojedynczo.</p>`
+        resultsBox.hidden = false
+        status.textContent = ''
+        resultsBox.querySelector('[data-zip]').addEventListener('click', async () => {
+            const files = {}
+            for (const r of photoResults) files[r.name] = [new Uint8Array(await r.blob.arrayBuffer()), { level: 0 }]
+            const zip = new Blob([zipSync(files)], { type: 'application/zip' })
+            const url = URL.createObjectURL(zip)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = `galeria-zdjecia-${fmt.replace(':', 'x')}-${stamp}.zip`
+            link.click()
+            setTimeout(() => URL.revokeObjectURL(url), 60000)
+        })
+        resultsBox.scrollIntoView({ block: 'nearest' })
+    }
     $('[data-preview]').addEventListener('click', () => run(false))
     $('[data-record]').addEventListener('click', () => {
+        if (scenario() === 'photos') { makePhotos(); return }
         if (!window.MediaRecorder && !window.VideoEncoder) { status.textContent = 'Ta przeglądarka nie obsługuje nagrywania — użyj Chrome lub Edge.'; return }
         run(true)
     })

@@ -16,6 +16,18 @@ export const FORMATS = {
     '16:9': { size: [1920, 1080], fov: 52, label: 'Poziomy 16:9 — YouTube' }
 }
 
+export const PHOTO_FORMATS = {
+    '4:5': { size: [1080, 1350], label: 'Instagram, Facebook — post pionowy' },
+    '1:1': { size: [1080, 1080], label: 'Instagram, Facebook — kwadrat' },
+    '1.91:1': { size: [1200, 628], label: 'Facebook — post poziomy, link' }
+}
+const PHOTO_FOV = 50
+const PHOTO_VIEWS = [
+    { key: 'bliska', fill: 0.86, lateral: 0, height: 0 },              // z bliska, na wprost
+    { key: 'dystans', fill: 0.46, lateral: 0.6, height: 0 },           // z lekkiego dystansu, trochę z boku
+    { key: '5m', distance: 5, lateral: 1.2, height: 0 }                // widok z 5 m — rysunek na ścianie sali
+]
+
 export const SCENARIOS = {
     newWork: { label: 'Nowe prace', hint: 'wybrane prace z napisem „Nowa praca”' },
     room: { label: 'Prezentacja sali', hint: 'kilka prac z wybranej sali, na początku nazwa sali' },
@@ -216,6 +228,89 @@ export class Reel {
             else if (d < 34) preview.push(art)
         }
         return { full, preview }
+    }
+
+    // ——— zdjęcia do postów: 3 widoki każdej pracy, bez napisów ———
+    photoCamera(art, view, aspect) {
+        const tanV = Math.tan(THREE.MathUtils.degToRad(PHOTO_FOV) / 2)
+        const tanH = tanV * aspect
+        const fitAt = (fill) => Math.max(art.outerW / fill / 2 / tanH, art.outerH / fill / 2 / tanV)
+        const want = view.distance || fitAt(view.fill)
+        const min = view.distance ? fitAt(0.62) : Math.min(want, 1.0)   // „5 m” nigdy nie staje się zbliżeniem
+        const side = new THREE.Vector3(art.normal.z, 0, -art.normal.x)
+        const place = (d, lateral) => art.world.clone().addScaledVector(art.normal, d).addScaledVector(side, lateral)
+        // szukamy wolnego miejsca: najpierw zadana odległość i strona, potem druga strona, na wprost, coraz bliżej
+        let pos = null
+        for (let d = want; d >= min - 1e-6 && !pos; d -= 0.15) {
+            const l = view.lateral * Math.min(1, d / 3)
+            for (const lateral of [l, -l, 0, l * 0.5, -l * 0.5]) {
+                const p = place(d, lateral)
+                if (!this.grid || this.grid.freeAt(p.x, p.z)) { pos = p; break }
+            }
+        }
+        if (!pos) pos = place(min, 0)
+        pos.y = view.distance ? EYE : art.world.y          // z bliska — na wysokości środka pracy, bez perspektywy
+        const dx = art.world.x - pos.x, dz = art.world.z - pos.z
+        return { pos, yaw: Math.atan2(-dx, -dz), pitch: THREE.MathUtils.clamp(Math.atan2(art.world.y - pos.y, Math.hypot(dx, dz)), -MAX_PITCH, MAX_PITCH) }
+    }
+
+    async photos({ format, artIds, onLoading, onProgress, renderFrame }) {
+        const spec = PHOTO_FORMATS[format] || PHOTO_FORMATS['4:5']
+        const [W, H] = spec.size
+        this.grid = this.gallery.bounds ? new Grid(this.gallery.bounds, this.gallery.colliders) : null
+        const ids = new Set(artIds)
+        const arts = this.order(this.gallery.artworks.filter((a) => ids.has(a.drawing.id)))
+        const shots = []
+        arts.forEach((art, i) => PHOTO_VIEWS.forEach((view) => shots.push({ art, view, n: i + 1, ...this.photoCamera(art, view, W / H) })))
+        // wczytanie: wszystko widoczne z punktów zdjęć
+        const full = [], preview = []
+        for (const art of this.gallery.artworks) {
+            const d = Math.min(...shots.map((s) => art.world.distanceTo(s.pos)))
+            if (d < 16) full.push(art)
+            else if (d < 36) preview.push(art)
+        }
+        await this.gallery.preload({ full, preview }, onLoading)
+
+        // render w 1,5× rozdzielczości i zmniejszenie — gładkie krawędzie ram
+        const SS = 1.5
+        const saved = { ratio: this.renderer.getPixelRatio(), fov: this.camera.fov, pos: this.camera.position.clone(), rot: this.camera.rotation.clone() }
+        this.active = true
+        this.offline = true
+        this.renderer.setPixelRatio(1)
+        this.renderer.setSize(Math.round(W * SS), Math.round(H * SS), false)
+        this.camera.aspect = W / H
+        this.camera.fov = PHOTO_FOV
+        this.camera.updateProjectionMatrix()
+        const out = document.createElement('canvas')
+        out.width = W
+        out.height = H
+        const ctx = out.getContext('2d')
+        ctx.imageSmoothingQuality = 'high'
+        const results = []
+        try {
+            for (const [i, shot] of shots.entries()) {
+                this.camera.position.copy(shot.pos)
+                this.camera.rotation.set(shot.pitch, shot.yaw, 0, 'YXZ')
+                renderFrame()
+                ctx.drawImage(this.renderer.domElement, 0, 0, W, H)
+                const blob = await new Promise((resolve) => out.toBlob(resolve, 'image/jpeg', 0.92))
+                const title = (shot.art.drawing.title || formatDate(shot.art.drawing.date) || 'praca').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l').replace(/Ł/g, 'L').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+                results.push({ name: `${shot.n}-${title}-${shot.view.key}.jpg`, blob, url: URL.createObjectURL(blob) })
+                onProgress?.(i + 1, shots.length)
+                await new Promise((resolve) => setTimeout(resolve, 0))
+            }
+        } finally {
+            this.active = false
+            this.offline = false
+            this.renderer.setPixelRatio(saved.ratio)
+            this.renderer.setSize(window.innerWidth, window.innerHeight)
+            this.camera.aspect = window.innerWidth / window.innerHeight
+            this.camera.fov = saved.fov
+            this.camera.updateProjectionMatrix()
+            this.camera.position.copy(saved.pos)
+            this.camera.rotation.copy(saved.rot)
+        }
+        return results
     }
 
     // napisy dla bieżącej klatki

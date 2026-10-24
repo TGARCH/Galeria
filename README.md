@@ -39,6 +39,10 @@ zapamiętuje dostęp w przeglądarce na 90 dni; pojawia się przycisk „Studio�
 „Nowa praca”, „Przegląd sali”, „Zaproszenie do galerii”; formaty 9:16, 4:5, 16:9.
 Film renderuje się klatka po klatce (30 kl./s, H.264 MP4) — zawsze płynny, niezależnie od
 komputera; najlepiej w Chrome lub Edge. Odwiedzający bez klucza nie widzą niczego.
+Panel krok po kroku: format → rodzaj (Nowe prace, Prezentacja sali, Spacer po galerii,
+Zdjęcia do postów) → sale → prace (miniatury). Filmy to spacer jak w trybie automatycznym.
+„Zdjęcia do postów”: każda wybrana praca w 3 ujęciach (z bliska, z dystansu, z 5 m), bez napisów,
+JPG 4:5 / 1:1 / 1,91:1, do pobrania pojedynczo lub w ZIP-ie.
 
 ## Zmienne środowiskowe (Vercel)
 
