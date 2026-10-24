@@ -475,7 +475,7 @@ export class Gallery {
                 for (const px of [-3.4, 0, 3.4]) {
                     const panel = new THREE.Mesh(unitPlane, materials.lightPanel)
                     panel.rotation.x = Math.PI / 2
-                    panel.scale.set(2.6, 1.5, 1)
+                    panel.scale.set(2.6, 0.55, 1)
                     panel.position.set(x0 + W / 2 + px, H - 0.005, pz)
                     group.add(panel)
                 }
