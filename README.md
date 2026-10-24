@@ -24,6 +24,14 @@ Przy 4 i więcej ściankach ustawiają się na przemian wzdłuż i w poprzek.
 W sali rysunki układają się chronologicznie (data dodania na Dysk): nowe dochodzą na końcu, starsze nie zmieniają miejsc.
 Tytuł bierze się z nazwy pliku; nazwy ze skanera (`20261022161541_001.jpg`) pokazują tylko datę.
 
+## Spacer automatyczny (targi, prezentacje)
+
+Przycisk „Spacer automatyczny” na ekranie startowym albo adres z `?spacer`
+(np. `https://galeria-tg.vercel.app/?spacer`) — kamera sama chodzi od pracy do pracy
+(sala po sali, omija ścianki), przy każdej zatrzymuje się ok. 7 s z podpisem, po ostatniej
+wraca płynnie na początek. Ruch myszą, klawisz lub dotyk przerywa spacer; z `?spacer`
+wraca on sam po minucie bezczynności. Parametry: `src/tour.js` (tempo, czas oglądania).
+
 ## Zmienne środowiskowe (Vercel)
 
 | Nazwa | Wartość |

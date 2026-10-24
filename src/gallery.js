@@ -591,7 +591,7 @@ export class Gallery {
 
             art.userData.index = index
             return {
-                drawing, index, number, room: slot.room, mesh: art, material: artMaterial, label, holder, world, normal,
+                drawing, index, number, room: slot.room, outerW: size.outerW, outerH: size.outerH, mesh: art, material: artMaterial, label, holder, world, normal,
                 level: old?.level ?? 0, loadingLevel: 0, failures: 0, retryAt: 0,
                 labelReady: false
             }
@@ -610,6 +610,7 @@ export class Gallery {
 
         if (spots.length) this.addSpots(group, spots)
 
+        this.bounds = { minX: -1, maxX: length + 1, minZ: -maxHalf - 1, maxZ: maxHalf + 1 }
         this.scene.add(group)
         this.lastStreamCheck = -1
     }

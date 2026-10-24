@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { inject } from '@vercel/analytics'
 import { galleryConfig as cfg } from './config.js'
 import { Gallery } from './gallery.js'
+import { Tour } from './tour.js'
 import { fetchRooms, imageUrl, isDemo, displayTitle, formatDate } from './drawings.js'
 
 inject()
@@ -81,6 +82,7 @@ const applyRooms = (rooms, firstLoad = false) => {
     drawings = rooms.flatMap((room) => room.drawings)
     roomOf = rooms.flatMap((room, r) => room.drawings.map(() => r))
     gallery.build(rooms)
+    tour?.onRebuild()
     countLabel.textContent = drawings.length ? pluralWorks(drawings.length) : 'Kolekcja jest pusta'
     if (firstLoad) placeVisitor()
 }
@@ -107,6 +109,8 @@ const loadCollection = async (firstLoad = false) => {
         }
     } finally {
         startButton.disabled = false
+        tourButton.disabled = !drawings.length
+        if (autoTour && !tour.active && drawings.length) startTour()
     }
 }
 
@@ -187,7 +191,7 @@ canvas.addEventListener('click', () => {
 document.addEventListener('pointerlockchange', () => {
     const active = document.pointerLockElement === canvas
     if (!active) pressedKeys.clear()
-    if (!lightboxOpen) showStartPanel(!active)
+    if (!lightboxOpen && !tour.active) showStartPanel(!active)
 })
 
 document.addEventListener('mousemove', (event) => {
@@ -349,8 +353,8 @@ let lastFocusCheck = 0
 const updateFocus = (elapsed) => {
     if (elapsed - lastFocusCheck < 0.1) return
     lastFocusCheck = elapsed
-    const art = navigationActive() && !isTouchDevice ? pickArtwork(center, 4.5) : null
-    if (art !== focused) {
+    const art = tour.active ? null : navigationActive() && !isTouchDevice ? pickArtwork(center, 4.5) : null
+    if (!tour.active && art !== focused) {
         focused = art
         caption.hidden = !art
         document.body.classList.toggle('focused', !!art)
@@ -418,6 +422,70 @@ $('.lightbox__next').addEventListener('click', () => stepLightbox(1))
 lightbox.addEventListener('click', (event) => { if (event.target === lightbox) closeLightbox() })
 
 // ————————————————————————————————————————————————
+// Spacer automatyczny (prezentacja na targi)
+// ————————————————————————————————————————————————
+// Włączany przyciskiem na ekranie startowym albo adresem z ?spacer — wtedy rusza sam
+// i wraca po minucie bezczynności, gdy zwiedzający przestanie sterować.
+
+const TOUR_IDLE_RESUME = 60
+const tourButton = $('.tour-button')
+const tourFade = $('.tour-fade')
+const autoTour = new URLSearchParams(window.location.search).has('spacer')
+let lastInput = performance.now()
+
+const tour = new Tour({
+    camera, gallery, eyeHeight,
+    onCaption: (art) => {
+        caption.hidden = !art
+        if (art) {
+            const date = formatDate(art.drawing.date)
+            captionTitle.textContent = art.drawing.title ? (date ? `${art.drawing.title} · ${date}` : art.drawing.title) : (date || displayTitle(art.drawing))
+        }
+    },
+    onFade: (amount) => { tourFade.style.opacity = String(amount) }
+})
+
+function startTour() {
+    if (!drawings.length) return
+    if (document.pointerLockElement) document.exitPointerLock()
+    showStartPanel(false)
+    document.body.classList.add('touring')
+    mobileControls.classList.remove('active')
+    velocity.set(0, 0, 0)
+    tour.start(yaw, pitch)
+}
+
+const stopTour = () => {
+    if (!tour.active) return
+    tour.stop()
+    yaw = tour.yaw
+    pitch = tour.pitch
+    tourFade.style.opacity = '0'
+    document.body.classList.remove('touring')
+    showStartPanel(true)
+}
+
+tourButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    hasEntered = true
+    startTour()
+    document.documentElement.requestFullscreen?.().catch(() => {})
+})
+
+// każde działanie zwiedzającego przerywa spacer i oddaje mu sterowanie
+const userInput = () => {
+    lastInput = performance.now()
+    if (tour.active && performance.now() - tourStartedAt > 800) stopTour()
+}
+let tourStartedAt = 0
+const originalStart = tour.start.bind(tour)
+tour.start = (...args) => { tourStartedAt = performance.now(); originalStart(...args) }
+window.addEventListener('keydown', userInput, true)
+window.addEventListener('pointerdown', userInput, true)
+window.addEventListener('wheel', userInput, { capture: true, passive: true })
+window.addEventListener('mousemove', (event) => { if (Math.abs(event.movementX) + Math.abs(event.movementY) > 6) userInput() }, true)
+
+// ————————————————————————————————————————————————
 // Pętla
 // ————————————————————————————————————————————————
 
@@ -425,7 +493,11 @@ const clock = new THREE.Clock()
 const tick = () => {
     const delta = clock.getDelta()
     const elapsed = clock.elapsedTime
-    updateWalk(delta)
+    if (tour.active) tour.update(delta)
+    else {
+        updateWalk(delta)
+        if (autoTour && !lightboxOpen && performance.now() - lastInput > TOUR_IDLE_RESUME * 1000) startTour()
+    }
     gallery.stream(camera.position, elapsed)
     updateFocus(elapsed)
     renderer.render(scene, camera)
