@@ -1,4 +1,15 @@
-import { config, fileMeta, mediaUrl, sendError } from './_drive.js'
+import { fileMeta, listFolder, mediaUrl, sendError } from './_drive.js'
+
+// Lista ID z folderu, trzymana w pamięci instancji przez minutę.
+// (Przy anonimowym kluczu API Drive nie zwraca pola "parents", więc przynależność
+// do folderu sprawdzamy względem listy.)
+let folderIds = { ids: new Set(), at: 0 }
+const inFolder = async (id) => {
+    if (Date.now() - folderIds.at > 60000 || !folderIds.ids.has(id)) {
+        folderIds = { ids: new Set((await listFolder()).map((file) => file.id)), at: Date.now() }
+    }
+    return folderIds.ids.has(id)
+}
 
 // Serwuje obraz z Dysku pod adresem tej samej domeny (wymagane przez WebGL — CORS),
 // w zadanej szerokości. Podaje wyłącznie pliki z folderu galerii.
@@ -10,9 +21,12 @@ export default async function handler(req, res) {
             return
         }
         const width = Math.min(Math.max(parseInt(req.query.w, 10) || 1024, 128), 2560)
-        const { folder } = config()
+        if (!(await inFolder(id))) {
+            res.status(404).json({ error: 'Nie znaleziono' })
+            return
+        }
         const meta = await fileMeta(id)
-        if (!meta.parents?.includes(folder) || !meta.mimeType?.startsWith('image/')) {
+        if (!meta.mimeType?.startsWith('image/')) {
             res.status(404).json({ error: 'Nie znaleziono' })
             return
         }

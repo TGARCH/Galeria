@@ -50,7 +50,7 @@ export const listFolder = async () => {
 
 export const fileMeta = async (id) => {
     const { key } = config()
-    const params = new URLSearchParams({ fields: 'id, parents, mimeType, thumbnailLink', supportsAllDrives: 'true', key })
+    const params = new URLSearchParams({ fields: 'id, mimeType, thumbnailLink', supportsAllDrives: 'true', key })
     return driveJson(`${DRIVE}/${encodeURIComponent(id)}?${params}`)
 }
 
