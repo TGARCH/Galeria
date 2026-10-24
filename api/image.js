@@ -25,26 +25,22 @@ export default async function handler(req, res) {
             res.status(404).json({ error: 'Nie znaleziono' })
             return
         }
-        const meta = await fileMeta(id)
-        if (!meta.mimeType?.startsWith('image/')) {
-            res.status(404).json({ error: 'Nie znaleziono' })
-            return
+        // 1) bezpośrednia miniatura Google (jedno zapytanie, działa dla plików publicznych)
+        // 2) miniatura z metadanych pliku  3) oryginał
+        const attempt = async (url) => {
+            const response = await fetch(url)
+            return response.ok && response.headers.get('content-type')?.startsWith('image/') ? response : null
         }
-
-        let image = null
-        if (meta.thumbnailLink) {
-            const sized = meta.thumbnailLink.replace(/=s\d+(-[a-z0-9-]+)?$/i, `=s${width}`)
-            const response = await fetch(sized)
-            if (response.ok) image = response
-        }
+        let image = await attempt(`https://lh3.googleusercontent.com/d/${id}=w${width}`)
         if (!image) {
-            const response = await fetch(mediaUrl(id))
-            if (!response.ok) throw Object.assign(new Error(`Pobranie pliku: ${response.status}`), { status: 502 })
-            image = response
+            const meta = await fileMeta(id)
+            if (meta.thumbnailLink) image = await attempt(meta.thumbnailLink.replace(/=s\d+(-[a-z0-9-]+)?$/i, `=s${width}`))
         }
+        if (!image) image = await attempt(mediaUrl(id))
+        if (!image) throw Object.assign(new Error('Nie udało się pobrać obrazu z Dysku'), { status: 502 })
 
         const buffer = Buffer.from(await image.arrayBuffer())
-        res.setHeader('Content-Type', image.headers.get('content-type') || meta.mimeType)
+        res.setHeader('Content-Type', image.headers.get('content-type'))
         res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=2592000, stale-while-revalidate=86400')
         res.status(200).send(buffer)
     } catch (error) {

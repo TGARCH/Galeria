@@ -342,7 +342,7 @@ export class Gallery {
             art.userData.index = index
             return {
                 drawing, index, mesh: art, material: artMaterial, label, holder, world, normal,
-                state: old?.state === 'loaded' ? 'loaded' : 'none',
+                level: old?.level ?? 0, loadingLevel: 0, failures: 0, retryAt: 0,
                 labelReady: false
             }
         })
@@ -370,43 +370,52 @@ export class Gallery {
         this.lastStreamCheck = -1
     }
 
-    // Wczytuje rysunki w pobliżu zwiedzającego, zwalnia pamięć po dalekich.
+    // Doczytywanie w dwóch krokach: najpierw lekki podgląd (szybko widać wszystkie
+    // prace w sali), potem pełna rozdzielczość dla rysunków z bliska.
+    // Nieudane wczytania są ponawiane, a dalekie tekstury zwalniane.
     stream(cameraPosition, elapsed) {
-        if (elapsed - this.lastStreamCheck < 0.35) return
+        if (elapsed - this.lastStreamCheck < 0.25) return
         this.lastStreamCheck = elapsed
-        const near = []
+        const now = performance.now()
+        const wanted = []
         for (const art of this.artworks) {
             const distance = art.world.distanceTo(cameraPosition)
-            if (distance < 16) near.push([distance, art])
-            if (distance < 7 && !art.labelReady) this.makeLabel(art)
-            if (distance > 32 && art.state === 'loaded') this.unload(art)
+            if (distance < 8 && !art.labelReady) this.makeLabel(art)
+            const target = distance < 9 ? 2 : distance < 30 ? 1 : 0
+            if (art.level > 0 && distance > 40) this.unload(art)
+            if (!art.loadingLevel && art.level < target && now >= art.retryAt) wanted.push([target === 2 ? distance - 100 : distance, art, target])
         }
-        near.sort((a, b) => a[0] - b[0])
-        for (const [, art] of near) {
-            if (this.loading >= 4) break
-            if (art.state === 'none') this.load(art)
+        wanted.sort((a, b) => a[0] - b[0])
+        for (const [, art, target] of wanted) {
+            if (this.loading >= 6) break
+            this.load(art, art.level === 0 ? 1 : target)
         }
     }
 
-    async load(art) {
-        art.state = 'loading'
+    async load(art, level) {
+        art.loadingLevel = level
         this.loading++
         try {
-            const texture = await loadTexture(art.drawing, this.textureWidth)
+            const width = level === 1 ? 480 : this.textureWidth
+            const texture = await loadTexture(art.drawing, width)
             texture.colorSpace = THREE.SRGBColorSpace
             texture.anisotropy = Math.min(8, this.maxAnisotropy)
-            if (art.state !== 'loading' || !this.artworks.includes(art)) {
+            if (!this.artworks.includes(art) || art.loadingLevel !== level || level <= art.level) {
                 texture.dispose()
                 return
             }
+            art.material.map?.dispose()
             art.material.map = texture
             art.material.color.set(0xffffff)
             art.material.needsUpdate = true
-            art.state = 'loaded'
+            art.level = level
+            art.failures = 0
         } catch (error) {
-            console.warn('Nie udało się wczytać rysunku', art.drawing.title, error)
-            art.state = 'error'
+            art.failures++
+            art.retryAt = performance.now() + Math.min(30000, 2000 * 2 ** art.failures)
+            console.warn('Nie udało się wczytać rysunku — ponowię', art.drawing.id, error)
         } finally {
+            art.loadingLevel = 0
             this.loading--
         }
     }
@@ -416,7 +425,8 @@ export class Gallery {
         art.material.map = null
         art.material.color.set(0xe8e4dc)
         art.material.needsUpdate = true
-        art.state = 'none'
+        art.level = 0
+        art.loadingLevel = 0
     }
 
     makeLabel(art) {
