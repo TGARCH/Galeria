@@ -46,17 +46,20 @@ export default async function handler(req, res) {
             res.status(404).json({ error: 'Nie znaleziono' })
             return
         }
-        // 1) bezpośrednia miniatura Google (jedno zapytanie, działa dla plików publicznych)
-        // 2) miniatura z metadanych pliku  3) oryginał
+        // 1) miniatura z metadanych pliku (adres zawiera bieżącą wersję pliku — po edycji
+        //    na Dysku od razu nowy obraz), 2) bezpośrednia miniatura Google, 3) oryginał
         const attempt = async (url) => {
             const response = await fetch(url)
             return response.ok && response.headers.get('content-type')?.startsWith('image/') ? response : null
         }
-        let image = await attempt(`https://lh3.googleusercontent.com/d/${id}=w${width}`)
-        if (!image) {
+        let image = null
+        try {
             const meta = await fileMeta(id)
             if (meta.thumbnailLink) image = await attempt(meta.thumbnailLink.replace(/=s\d+(-[a-z0-9-]+)?$/i, `=s${width}`))
+        } catch (error) {
+            console.warn('Brak miniatury z metadanych', id, error.message)
         }
+        if (!image) image = await attempt(`https://lh3.googleusercontent.com/d/${id}=w${width}`)
         if (!image) image = await attempt(mediaUrl(id))
         if (!image) throw Object.assign(new Error('Nie udało się pobrać obrazu z Dysku'), { status: 502 })
 

@@ -18,6 +18,8 @@ export default async function handler(req, res) {
             const { title, date } = titleFromName(file.name)
             return {
                 id: file.id,
+                // wersja pliku: zmienia się po każdej edycji na Dysku, więc stary obraz nie zostaje w cache
+                rev: file.version || file.modifiedTime || '',
                 title,
                 date: date || file.createdTime?.slice(0, 10) || null,
                 description: file.description || '',

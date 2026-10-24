@@ -565,7 +565,8 @@ export class Gallery {
             bevel.position.z = matZ + 0.003
             holder.add(bevel)
 
-            const old = previous.get(drawing.id)
+            const prev = previous.get(drawing.id)
+            const old = prev && prev.drawing.rev === drawing.rev ? prev : null
             const artMaterial = old?.material ?? new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.92 })
             if (old) reused.add(drawing.id)
             const art = new THREE.Mesh(unitPlane, artMaterial)

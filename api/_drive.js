@@ -48,7 +48,7 @@ const listChildren = async (parent, mimeFilter, fields) => {
     return files
 }
 
-const IMAGE_FIELDS = 'id, name, description, createdTime, imageMediaMetadata(width, height, rotation)'
+const IMAGE_FIELDS = 'id, name, description, createdTime, modifiedTime, version, imageMediaMetadata(width, height, rotation)'
 export const listImages = (folder) => listChildren(folder, "mimeType contains 'image/'", IMAGE_FIELDS)
 
 // "2 Grupa środowa" → { order: 2, title: "Grupa środowa" }; bez numeru — alfabetycznie, po numerowanych

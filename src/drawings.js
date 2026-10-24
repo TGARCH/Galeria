@@ -19,7 +19,7 @@ export const fetchRooms = async () => {
 
 export const imageUrl = (drawing, width) => drawing.demo
     ? demoCanvas(drawing).toDataURL('image/jpeg', 0.9)
-    : `/api/image?id=${encodeURIComponent(drawing.id)}&w=${width}&v=2`
+    : `/api/image?id=${encodeURIComponent(drawing.id)}&w=${width}&v=2&r=${encodeURIComponent(drawing.rev || '')}`
 
 const textureLoader = new THREE.TextureLoader()
 

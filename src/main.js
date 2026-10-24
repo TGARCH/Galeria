@@ -75,7 +75,7 @@ const placeVisitor = () => {
 }
 
 const applyRooms = (rooms, firstLoad = false) => {
-    const next = JSON.stringify(rooms.map((room) => [room.title, room.drawings.map((d) => [d.id, d.title])]))
+    const next = JSON.stringify(rooms.map((room) => [room.title, room.drawings.map((d) => [d.id, d.title, d.rev, d.width, d.height])]))
     if (next === signature && !firstLoad) return
     signature = next
     drawings = rooms.flatMap((room) => room.drawings)
