@@ -150,7 +150,7 @@ const P = cfg.partition
 // Układ sali. Wszystkie sale leżą na wspólnej osi (z = 0) i są wobec niej symetryczne,
 // więc przejścia między salami wypadają zawsze na środku ścian, a oś pozostaje wolna.
 // Mała sala: same ściany. Większa: ścianki wolnostojące w pasach po obu stronach osi
-// (na przemian północ / południe); przy 3 i więcej ściankach — na przemian wzdłuż i w poprzek.
+// (zawsze parami: północ + południe); przy 4 i więcej — na przemian wzdłuż i w poprzek.
 const HALL_HALF = D / 2          // połowa głębokości sali bez ścianek
 const BAND = 7                   // głębokość pasa na jedną ściankę
 const PART_Z_LENGTH = 4.4        // ścianka ustawiona w poprzek (wzdłuż osi Z) jest krótsza
@@ -181,14 +181,16 @@ const planRoom = (room, count) => {
         if (westSlots) line(-doorEdge - 0.2, -inner + 0.3, sideN, (z, span) => add(x0 + T / 2, z, Math.PI / 2, span))
         line(x0 + 1.1, x0 + W - 1.1, wallN, (x, span) => add(x, -inner, 0, span))
         line(-inner + 0.3, -doorEdge - 0.2, sideN, (z, span) => add(x0 + W - T / 2, z, -Math.PI / 2, span))
-        // ścianki wolnostojące
+        // ścianki wolnostojące — zawsze parami (po jednej w każdej połowie sali), żeby nie
+        // zostawały puste place; kolejno od północy do południa, przy 4 i więcej na przemian
+        // wzdłuż i w poprzek
         const partitions = []
-        for (let i = 0; i < partitionCount; i++) {
-            const north = i % 2 === 0
-            const band = Math.floor(i / 2)
-            const zc = (north ? -1 : 1) * (HALL_HALF + band * BAND + BAND / 2)
-            const across = partitionCount >= 3 && i % 2 === 1
-            const cx = x0 + W / 2
+        const positions = []
+        for (let b = bands - 1; b >= 0; b--) positions.push(-(HALL_HALF + b * BAND + BAND / 2))
+        for (let b = 0; b < bands; b++) positions.push(HALL_HALF + b * BAND + BAND / 2)
+        const cx = x0 + W / 2
+        positions.forEach((zc, i) => {
+            const across = partitionCount >= 4 && i % 2 === 1
             if (!across) {
                 const len = P.length
                 partitions.push({ x: cx, z: zc, sx: len, sz: P.thickness })
@@ -200,7 +202,7 @@ const planRoom = (room, count) => {
                 line(zc - len / 2 + 0.2, zc + len / 2 - 0.2, 2, (z, span) => add(cx - P.thickness / 2, z, -Math.PI / 2, span))
                 line(zc + len / 2 - 0.2, zc - len / 2 + 0.2, 2, (z, span) => add(cx + P.thickness / 2, z, Math.PI / 2, span))
             }
-        }
+        })
         // wschód, odcinek południowy → ściana południowa → zachód, odcinek południowy
         line(doorEdge + 0.2, inner - 0.3, sideN, (z, span) => add(x0 + W - T / 2, z, -Math.PI / 2, span))
         line(x0 + W - 1.1, x0 + 1.1, wallN, (x, span) => add(x, inner, Math.PI, span))
@@ -209,9 +211,14 @@ const planRoom = (room, count) => {
     }
     let partitionCount = 0
     let plan = build(0)
-    while (plan.slots.length < count) plan = build(++partitionCount)
+    while (plan.slots.length < count) plan = build(partitionCount += 2)
     return plan
 }
+
+// Rysunki rozkładają się równomiernie po wszystkich miejscach sali, więc wolne miejsca
+// (gdy prac jest mniej niż miejsc) są rozproszone, a nie zebrane w jednym końcu sali.
+const spreadSlots = (slots, count) => Array.from({ length: count }, (_, i) =>
+    slots[Math.min(slots.length - 1, Math.floor((i + 0.5) * slots.length / count))])
 
 // Rozmiar oprawionego rysunku dopasowany do miejsca na ścianie
 const frameSize = (drawing, span) => {
@@ -452,7 +459,7 @@ export class Gallery {
 
         // ——— rysunki ———
         const placed = rooms.flatMap((room, r) => {
-            const slots = plans[r].slots
+            const slots = spreadSlots(plans[r].slots, room.drawings.length)
             return room.drawings.map((drawing, i) => ({ drawing, slot: slots[i], number: i + 1 }))
         })
         const spots = []
@@ -556,15 +563,25 @@ export class Gallery {
         group.add(mounts, heads, inners, lenses)
 
         // szyny: jedna na każdy ciąg reflektorów w sali
-        const runs = new Map()
+        // szyny: ciągi reflektorów na jednej linii, dzielone tam, gdzie przerwa > 4 m
+        const lines = new Map()
         for (const spot of spots) {
             const line = spot.alongX ? spot.z : spot.x
-            const pos = spot.alongX ? spot.x : spot.z
             const key = `${spot.room}:${spot.alongX ? 'x' : 'z'}:${line.toFixed(2)}`
-            const run = runs.get(key) ?? { alongX: spot.alongX, line, min: Infinity, max: -Infinity }
-            run.min = Math.min(run.min, pos)
-            run.max = Math.max(run.max, pos)
-            runs.set(key, run)
+            const entry = lines.get(key) ?? { alongX: spot.alongX, line, positions: [] }
+            entry.positions.push(spot.alongX ? spot.x : spot.z)
+            lines.set(key, entry)
+        }
+        const runs = new Map()
+        for (const [key, entry] of lines) {
+            const sorted = entry.positions.sort((p, q) => p - q)
+            let run = null
+            sorted.forEach((pos, i) => {
+                if (!run || pos - run.max > 4) {
+                    run = { alongX: entry.alongX, line: entry.line, min: pos, max: pos }
+                    runs.set(`${key}:${i}`, run)
+                } else run.max = pos
+            })
         }
         const tracks = new THREE.InstancedMesh(unitBox, materials.track, runs.size)
         let t = 0

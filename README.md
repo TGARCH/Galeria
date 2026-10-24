@@ -17,8 +17,9 @@ numer nie jest wyświetlany), potem alfabetycznie. Pliki luzem w folderze głów
 Puste foldery są pomijane.
 
 Układ sali: przejścia na środku ścian, na wspólnej osi wszystkich sal. Mała sala (do 14 prac) ma same ściany;
-większa dostaje ścianki wolnostojące w pasach po obu stronach osi i rośnie symetrycznie w głąb.
-Przy 3 i więcej ściankach ustawiają się na przemian wzdłuż i w poprzek.
+większa dostaje ścianki wolnostojące parami (po jednej w każdej połowie sali) i rośnie symetrycznie w głąb.
+Rysunki rozkładają się równomiernie po wszystkich miejscach sali.
+Przy 4 i więcej ściankach ustawiają się na przemian wzdłuż i w poprzek.
 
 W sali rysunki układają się chronologicznie (data dodania na Dysk): nowe dochodzą na końcu, starsze nie zmieniają miejsc.
 Tytuł bierze się z nazwy pliku; nazwy ze skanera (`20261022161541_001.jpg`) pokazują tylko datę.
