@@ -162,7 +162,7 @@ const slotsAlong = (length) => length < 2 ? 0 : Math.max(1, Math.floor((length -
 // doors: { west, east } — położenie przejścia (z) na ścianie zachodniej / wschodniej,
 // null = ściana bez przejścia. Zachodnia ściana pierwszej sali jest zarezerwowana na tytuł galerii.
 const NEXT_SIGN_GAP = 1.5        // miejsce na napis „Następna…” obok przejścia
-const TITLE_GAP = 2.4            // miejsce na nazwę sali (zamiast jednej pracy)
+const TITLE_GAP = 3.0            // miejsce na nazwę sali (zamiast jednej pracy)
 const planRoom = (room, count, doors) => {
     const westSlots = room > 0
     const x0 = room * W
@@ -367,7 +367,7 @@ const nextRoomCanvas = (title) => {
     ctx.letterSpacing = '0px'
     ctx.fillStyle = '#1f1d1a'
     ctx.font = '500 104px "Cormorant Garamond", Georgia, serif'
-    ctx.fillText(`${title} →`, 24, 222, 980)
+    ctx.fillText(`${title} ↑`, 24, 222, 980)
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     texture.anisotropy = 8
@@ -492,7 +492,7 @@ export class Gallery {
             }
             // nazwa sali w miejscu jednej pracy i napis przy przejściu do następnej
             const { title, nextSign } = plans[r]
-            addText(roomNameCanvas(this.roomTitles[r], rooms[r].drawings.length), title.x - 0.006, cfg.frame.centerHeight + 0.15, title.z, title.rotY, 1.9, 560 / 2048)
+            addText(roomNameCanvas(this.roomTitles[r], rooms[r].drawings.length), title.x - 0.006, cfg.frame.centerHeight + 0.15, title.z, title.rotY, 2.6, 560 / 2048)
             if (nextSign) addText(nextRoomCanvas(this.roomTitles[r + 1]), nextSign.x - 0.006, 1.55, nextSign.z, nextSign.rotY, 1.15, 300 / 1024)
         }
 
