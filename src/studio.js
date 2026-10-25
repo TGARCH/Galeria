@@ -42,6 +42,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             <section class="studio-step">
                 <h3><b>1</b> Format</h3>
                 <div class="studio-choices" data-format></div>
+                <label class="studio-yt" data-yt hidden><input type="checkbox" checked> <span>Dla YouTube: przygotuj też 2 miniatury i zwiastun (ok. 15 s)</span></label>
             </section>
             <section class="studio-step">
                 <h3><b>2</b> Rodzaj prezentacji</h3>
@@ -102,6 +103,21 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
         }
         $('[data-preview]').hidden = photos
         $('[data-record]').textContent = photos ? 'Utwórz zdjęcia' : 'Nagraj film'
+        syncYouTube()
+    }
+    const ytBox = $('[data-yt]')
+    const syncYouTube = () => { ytBox.hidden = scenario() === 'photos' || format() !== '16:9' }
+    formatBox.addEventListener('change', syncYouTube)
+
+    // tytuł miniatur i zwiastuna — zależny od rodzaju prezentacji
+    const headingFor = (kind) => {
+        const chosen = gallery.artworks.filter((a) => selectedArts.has(a.drawing.id))
+        if (kind === 'newWork') return chosen.length > 1 ? 'Nowe prace' : 'Nowa praca'
+        if (kind === 'room') {
+            const rooms = [...new Set(chosen.map((a) => a.room))]
+            return rooms.length === 1 ? gallery.roomTitles[rooms[0]] : 'Wybrane prace'
+        }
+        return 'Spacer po galerii'
     }
     const newest = (arts) => [...arts].sort((a, b) => String(b.drawing.created || '').localeCompare(String(a.drawing.created || '')))
 
@@ -215,6 +231,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
 
     const run = async (record) => {
         if (!selectedArts.size) { status.textContent = 'Zaznacz prace do pokazania (krok 4).'; return }
+        resultsBox.hidden = true
         panel.hidden = true
         button.hidden = true
         badge.hidden = false
@@ -241,9 +258,14 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             console.error(error)
             result = { completed: false, error: 'build' }
         }
+        let extras = null
+        if (record && result.completed && result.blob && fmt === '16:9' && !ytBox.hidden && ytBox.querySelector('input').checked) {
+            extras = await youtubeExtras(kind)
+        }
         badge.hidden = true
         button.hidden = false
         panel.hidden = false
+        if (extras) showExtras(extras)
         if (result.completed && result.blob) {
             const name = `galeria-${kind}-${fmt.replace(':', 'x')}-${new Date().toISOString().slice(0, 10)}.${result.extension}`
             const url = URL.createObjectURL(result.blob)
@@ -257,6 +279,48 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
         else if (result.error) status.textContent = 'Nie udało się przygotować trasy — zmień wybór prac.'
         else status.textContent = result.completed ? 'Podgląd zakończony.' : 'Przerwano.'
     }
+    // miniatury + zwiastun (po nagraniu filmu 16:9)
+    const youtubeExtras = async (kind) => {
+        const heading = headingFor(kind)
+        const ids = [...selectedArts]
+        const files = []
+        try {
+            badge.textContent = 'Miniatury YouTube…'
+            files.push(...await reel.thumbnails({
+                artIds: ids, heading, renderFrame: reel.renderFrame,
+                onLoading: (done, total) => { badge.textContent = `Miniatury — wczytywanie prac ${done} / ${total}…` }
+            }))
+            const teaser = await reel.play({
+                scenario: 'teaser', format: '16:9', record: true, options: { artIds: ids, heading }, renderFrame: reel.renderFrame,
+                onLoading: (done, total) => { badge.textContent = `Zwiastun — wczytywanie prac ${done} / ${total}…` },
+                onProgress: (t, total, fraction) => { badge.textContent = `● Zwiastun ${Math.round((fraction || 0) * 100)}%   ·   Esc — przerwij` }
+            })
+            if (teaser.completed && teaser.blob) files.push({ name: `zwiastun.${teaser.extension}`, blob: teaser.blob, url: URL.createObjectURL(teaser.blob), video: true })
+        } catch (error) {
+            console.error('Miniatury / zwiastun', error)
+        }
+        return files.length ? files : null
+    }
+    const showExtras = (files) => {
+        const stamp = new Date().toISOString().slice(0, 10)
+        resultsBox.innerHTML = `<div class="studio-results__head"><span>Pakiet YouTube</span><button type="button" class="primary" data-zip>Pobierz wszystko (ZIP)</button></div>
+            <div class="studio-results__grid studio-results__grid--yt">${files.map((f) => f.video
+                ? `<a href="${f.url}" download="${f.name}" title="Pobierz zwiastun"><video src="${f.url}" muted loop autoplay playsinline></video></a>`
+                : `<a href="${f.url}" download="${f.name}" title="Pobierz ${f.name}"><img src="${f.url}" alt=""></a>`).join('')}</div>
+            <p class="studio-results__hint">Miniatury 1280×720 (YouTube → Miniatura; dwie wersje możesz porównać funkcją „Testuj i porównuj”). Zwiastun — jako krótki film zapowiadający albo wstęp. Kliknij, żeby pobrać pojedynczo.</p>`
+        resultsBox.hidden = false
+        resultsBox.querySelector('[data-zip]').addEventListener('click', async () => {
+            const zipFiles = {}
+            for (const f of files) zipFiles[f.name] = [new Uint8Array(await f.blob.arrayBuffer()), { level: 0 }]
+            const url = URL.createObjectURL(new Blob([zipSync(zipFiles)], { type: 'application/zip' }))
+            const link = document.createElement('a')
+            link.href = url
+            link.download = `galeria-youtube-${stamp}.zip`
+            link.click()
+            setTimeout(() => URL.revokeObjectURL(url), 60000)
+        })
+    }
+
     const makePhotos = async () => {
         if (!selectedArts.size) { status.textContent = 'Zaznacz prace (krok 4).'; return }
         photoResults.forEach((r) => URL.revokeObjectURL(r.url))

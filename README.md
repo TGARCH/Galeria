@@ -48,6 +48,7 @@ Panel krok po kroku: format → rodzaj (Nowe prace, Prezentacja sali, Spacer po 
 Zdjęcia do postów) → sale → prace (miniatury). Filmy to spacer jak w trybie automatycznym.
 „Zdjęcia do postów”: każda wybrana praca w 3 ujęciach (z bliska, z dystansu, z 5 m), bez napisów,
 JPG 4:5 / 1:1 / 1,91:1, do pobrania pojedynczo lub w ZIP-ie.
+Przy filmie 16:9 Studio przygotowuje też pakiet YouTube: 2 miniatury 1280×720 (kolaż i sala) oraz zwiastun ok. 10–15 s.
 
 ## Zmienne środowiskowe (Vercel)
 

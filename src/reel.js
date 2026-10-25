@@ -214,6 +214,238 @@ export class Reel {
         return this.neededArtworks()
     }
 
+    // ——— zwiastun na YouTube: krótkie, dynamiczne ujęcia wybranych prac ———
+    // Ujęcie otwierające z dużym tytułem, potem po ok. 1,7 s na pracę (najazd z boku),
+    // twarde cięcia z krótkim wyjściem z czerni, na końcu plansza z adresem.
+    buildTeaser({ artIds = [], heading = '' }) {
+        this.grid = this.gallery.bounds ? new Grid(this.gallery.bounds, this.gallery.colliders) : null
+        const ids = new Set(artIds)
+        let arts = this.order(this.gallery.artworks.filter((a) => ids.has(a.drawing.id)))
+        if (!arts.length) throw new Error('Brak wybranych prac')
+        const MAX = 7
+        if (arts.length > MAX) arts = Array.from({ length: MAX }, (_, i) => arts[Math.floor((i + 0.5) * arts.length / MAX)])
+        const frames = []
+        const events = []
+        const fov = this.vfov || 52
+        const aspect = this.aspect || 16 / 9
+        const shot = (from, to, target, seconds, ease = (t) => t) => {
+            const n = Math.round(seconds * FPS)
+            for (let i = 0; i < n; i++) {
+                const t = ease(i / Math.max(n - 1, 1))
+                const p = from.clone().lerp(to, t)
+                const dx = target.x - p.x, dz = target.z - p.z
+                const pitch = THREE.MathUtils.clamp(Math.atan2(target.y - p.y, Math.hypot(dx, dz)), -MAX_PITCH, MAX_PITCH)
+                frames.push(p.x, p.y, p.z, Math.atan2(-dx, -dz), pitch)
+            }
+        }
+        const easeOutQuad = (t) => 1 - (1 - t) * (1 - t)
+
+        // otwarcie: szeroki widok sali z pierwszą pracą, powolny najazd
+        const first = arts[0]
+        const wideA = this.photoCamera(first, { distance: 5.5, lateral: 1.8 }, aspect, fov).pos
+        const wideB = this.photoCamera(first, { distance: 4.6, lateral: 1.2 }, aspect, fov).pos
+        wideA.y = wideB.y = EYE
+        let start = frames.length / 5
+        shot(wideA, wideB, first.world, 2.4)
+        events.push({ type: 'teaserTitle', start, end: frames.length / 5, heading })
+
+        arts.forEach((art, index) => {
+            const side = index % 2 ? -1 : 1
+            const a = this.photoCamera(art, { fill: 0.5, lateral: 0.8 * side }, aspect, fov).pos
+            const b = this.photoCamera(art, { fill: 0.72, lateral: -0.15 * side }, aspect, fov).pos
+            a.y = b.y = (EYE + art.world.y) / 2
+            start = frames.length / 5
+            shot(a, b, art.world, 1.75, easeOutQuad)
+            events.push({ type: 'teaserShot', start, end: frames.length / 5, art, index, count: arts.length })
+        })
+
+        // zakończenie: odjazd od ostatniej pracy i plansza
+        const last = arts[arts.length - 1]
+        const endA = this.photoCamera(last, { fill: 0.72, lateral: 0 }, aspect, fov).pos
+        const endB = this.photoCamera(last, { distance: 4.2, lateral: 0.6 }, aspect, fov).pos
+        endA.y = endB.y = EYE
+        start = frames.length / 5
+        shot(endA, endB, last.world, 3.0, easeOutQuad)
+        events.push({ type: 'end', start: start + Math.round(0.6 * FPS), end: frames.length / 5 })
+
+        this.scenario = 'teaser'
+        this.frames = new Float32Array(frames)
+        this.frameCount = frames.length / 5
+        this.events = events
+        this.total = this.frameCount / FPS
+        return this.neededArtworks()
+    }
+
+    // ——— miniatury YouTube 1280×720: dwa warianty ———
+    // A „Kolaż”: sala w tle, z prawej wybrane rysunki jak odbitki, z lewej duży tytuł.
+    // B „Sala”: rysunek na ścianie galerii na całym kadrze, tytuł na dole.
+    async thumbnails({ artIds, heading, onLoading, renderFrame }) {
+        const W = 1280, H = 720, SS = 1.5, FOV = 50
+        this.grid = this.gallery.bounds ? new Grid(this.gallery.bounds, this.gallery.colliders) : null
+        const ids = new Set(artIds)
+        const arts = this.order(this.gallery.artworks.filter((a) => ids.has(a.drawing.id)))
+        if (!arts.length) throw new Error('Brak wybranych prac')
+        const cards = arts.length <= 3 ? arts : [0, 1, 2].map((i) => arts[Math.floor((i + 0.5) * arts.length / 3)])
+        const hero = cards[0]
+        const views = [
+            this.photoCamera(hero, { distance: 5.2, lateral: 1.6 }, W / H, FOV),
+            this.photoCamera(hero, { fill: 0.42, lateral: 0.9 }, W / H, FOV)
+        ]
+        views[0].pos.y = EYE
+        const full = [], preview = []
+        for (const art of this.gallery.artworks) {
+            const d = Math.min(...views.map((v) => art.world.distanceTo(v.pos)))
+            if (d < 16 || cards.includes(art)) full.push(art)
+            else if (d < 36) preview.push(art)
+        }
+        this.missing = await this.gallery.preload({ full, preview }, onLoading)
+
+        const saved = { ratio: this.renderer.getPixelRatio(), fov: this.camera.fov, pos: this.camera.position.clone(), rot: this.camera.rotation.clone() }
+        this.active = true
+        this.offline = true
+        const renders = []
+        try {
+            this.renderer.setPixelRatio(1)
+            this.renderer.setSize(W * SS, H * SS, false)
+            this.camera.aspect = W / H
+            this.camera.fov = FOV
+            this.camera.updateProjectionMatrix()
+            for (const v of views) {
+                this.camera.position.copy(v.pos)
+                this.camera.rotation.set(v.pitch, v.yaw, 0, 'YXZ')
+                renderFrame()
+                const c = document.createElement('canvas')
+                c.width = W
+                c.height = H
+                const cx = c.getContext('2d')
+                cx.imageSmoothingQuality = 'high'
+                cx.drawImage(this.renderer.domElement, 0, 0, W, H)
+                renders.push(c)
+            }
+        } finally {
+            this.gallery.unpin()
+            this.active = false
+            this.offline = false
+            this.renderer.setPixelRatio(saved.ratio)
+            this.renderer.setSize(window.innerWidth, window.innerHeight)
+            this.camera.aspect = window.innerWidth / window.innerHeight
+            this.camera.fov = saved.fov
+            this.camera.updateProjectionMatrix()
+            this.camera.position.copy(saved.pos)
+            this.camera.rotation.copy(saved.rot)
+        }
+
+        const out = []
+        const save = async (canvas, name) => {
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+            out.push({ name, blob, url: URL.createObjectURL(blob) })
+        }
+
+        // wariant A — kolaż
+        {
+            const c = document.createElement('canvas')
+            c.width = W
+            c.height = H
+            const ctx = c.getContext('2d')
+            ctx.filter = 'blur(3px) brightness(0.9)'
+            ctx.drawImage(renders[0], -20, -12, W + 40, H + 24)
+            ctx.filter = 'none'
+            const g = ctx.createLinearGradient(0, 0, W * 0.75, 0)
+            g.addColorStop(0, 'rgba(24,21,18,0.92)')
+            g.addColorStop(0.55, 'rgba(24,21,18,0.62)')
+            g.addColorStop(1, 'rgba(24,21,18,0)')
+            ctx.fillStyle = g
+            ctx.fillRect(0, 0, W, H)
+            // odbitki rysunków
+            const slots = [
+                { x: 1035, y: 350, h: 520, rot: 0.035 },
+                { x: 905, y: 430, h: 400, rot: -0.07 },
+                { x: 1165, y: 455, h: 340, rot: 0.08 }
+            ].slice(0, cards.length)
+            const order = slots.map((slot, i) => [slot, cards[i]]).reverse()
+            for (const [slot, art] of order) this.drawCard(ctx, art, slot)
+            this.drawThumbText(ctx, heading, W, H, { x: 64, width: 560, top: 250 })
+            await save(c, 'miniatura-A-kolaz.jpg')
+        }
+
+        // wariant B — sala
+        {
+            const c = document.createElement('canvas')
+            c.width = W
+            c.height = H
+            const ctx = c.getContext('2d')
+            ctx.drawImage(renders[1], 0, 0)
+            const g = ctx.createLinearGradient(0, H * 0.45, 0, H)
+            g.addColorStop(0, 'rgba(24,21,18,0)')
+            g.addColorStop(1, 'rgba(24,21,18,0.88)')
+            ctx.fillStyle = g
+            ctx.fillRect(0, 0, W, H)
+            this.drawThumbText(ctx, heading, W, H, { x: 64, width: W - 128, top: H - 210, compact: true })
+            await save(c, 'miniatura-B-sala.jpg')
+        }
+        return out
+    }
+
+    // rysunek jak odbitka: biały brzeg, cień, lekki obrót
+    drawCard(ctx, art, { x, y, h, rot }) {
+        const img = art.material.map?.image
+        if (!img) return
+        const iw = img.width || img.naturalWidth, ih = img.height || img.naturalHeight
+        if (!iw || !ih) return
+        let dh = h, dw = h * iw / ih
+        if (dw > 440) { dw = 440; dh = dw * ih / iw }
+        const m = Math.round(Math.min(dw, dh) * 0.06)
+        ctx.save()
+        ctx.translate(x, y)
+        ctx.rotate(rot)
+        ctx.shadowColor = 'rgba(0,0,0,0.45)'
+        ctx.shadowBlur = 40
+        ctx.shadowOffsetY = 16
+        ctx.fillStyle = '#fbfaf6'
+        ctx.fillRect(-dw / 2 - m, -dh / 2 - m, dw + 2 * m, dh + 2 * m)
+        ctx.shadowColor = 'transparent'
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh)
+        ctx.restore()
+    }
+
+    // duży tytuł miniatury — dopasowany do szerokości, maks. 2 wiersze
+    drawThumbText(ctx, heading, W, H, { x, width, top, compact = false }) {
+        ctx.save()
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'alphabetic'
+        ctx.fillStyle = '#d9c9a8'
+        ctx.font = '500 26px "Inter", Arial, sans-serif'
+        ctx.letterSpacing = '7px'
+        ctx.fillText(cfg.title.toUpperCase(), x, top - (compact ? 4 : 30))
+        ctx.letterSpacing = '0px'
+        let size = compact ? 104 : 120
+        const words = String(heading).split(/\s+/)
+        let lines
+        for (; size >= 54; size -= 4) {
+            ctx.font = `500 ${size}px "Cormorant Garamond", Georgia, serif`
+            lines = []
+            let line = ''
+            for (const w of words) {
+                const test = line ? `${line} ${w}` : w
+                if (ctx.measureText(test).width > width && line) { lines.push(line); line = w } else line = test
+            }
+            lines.push(line)
+            if (lines.length <= (compact ? 1 : 2) && lines.every((l) => ctx.measureText(l).width <= width)) break
+        }
+        ctx.fillStyle = '#ffffff'
+        ctx.shadowColor = 'rgba(0,0,0,0.35)'
+        ctx.shadowBlur = 18
+        lines.forEach((l, i) => ctx.fillText(l, x - 4, top + size * 0.82 + i * size * 0.95))
+        ctx.shadowColor = 'transparent'
+        const y = top + size * 0.82 + (lines.length - 1) * size * 0.95
+        ctx.fillStyle = '#d9c9a8'
+        ctx.fillRect(x, y + 40, 90, 4)
+        ctx.fillStyle = 'rgba(255,255,255,0.88)'
+        ctx.font = 'italic 400 34px "Cormorant Garamond", Georgia, serif'
+        ctx.fillText(`Wirtualna galeria · ${window.location.host}`, x, y + 92)
+        ctx.restore()
+    }
+
     // Prace widoczne w nagraniu: wszystko w zasięgu wzroku z trasy kamery.
     // Bliskie — pełna rozdzielczość, dalsze — podgląd. Wczytywane PRZED startem.
     neededArtworks() {
@@ -231,8 +463,8 @@ export class Reel {
     }
 
     // ——— zdjęcia do postów: 3 widoki każdej pracy, bez napisów ———
-    photoCamera(art, view, aspect) {
-        const tanV = Math.tan(THREE.MathUtils.degToRad(PHOTO_FOV) / 2)
+    photoCamera(art, view, aspect, fov = PHOTO_FOV) {
+        const tanV = Math.tan(THREE.MathUtils.degToRad(fov) / 2)
         const tanH = tanV * aspect
         const fitAt = (fill) => Math.max(art.outerW / fill / 2 / tanH, art.outerH / fill / 2 / tanV)
         const want = view.distance || fitAt(view.fill)
@@ -333,6 +565,12 @@ export class Reel {
                 else this.drawCaption(ctx, e.art, alpha, W, H)
             } else if (e.type === 'end') {
                 this.drawEndCard(ctx, clamp01(u * len / 0.9), W, H)
+            } else if (e.type === 'teaserTitle') {
+                this.drawTeaserTitle(ctx, e.heading, fade(u, 0, 0.25 / len, 1 - 0.3 / len, 1), W, H)
+                this.drawDip(ctx, 1 - clamp01(u * len / 0.35), W, H)
+            } else if (e.type === 'teaserShot') {
+                this.drawDip(ctx, 1 - clamp01(u * len / 0.18), W, H)
+                this.drawTeaserLabel(ctx, e.art, e.index, fade(u, 0.08, 0.25, 0.88, 1), W, H)
             }
         }
     }
@@ -425,6 +663,45 @@ export class Reel {
         this.text(ctx, this.gallery.roomTitles[room], W / 2, y + 14 * s, `500 ${46 * s}px "Cormorant Garamond", Georgia, serif`, '#1f1d1a', alpha)
     }
 
+    // krótkie wyjście z czerni na cięciu
+    drawDip(ctx, alpha, W, H) {
+        if (alpha <= 0) return
+        ctx.save()
+        ctx.globalAlpha = alpha * 0.85
+        ctx.fillStyle = '#0d0c0b'
+        ctx.fillRect(0, 0, W, H)
+        ctx.restore()
+    }
+
+    drawTeaserTitle(ctx, heading, alpha, W, H) {
+        if (alpha <= 0) return
+        const s = W / 1920
+        ctx.save()
+        ctx.globalAlpha = alpha * 0.62
+        ctx.fillStyle = '#14120f'
+        ctx.fillRect(0, 0, W, H)
+        ctx.restore()
+        this.text(ctx, cfg.title.toUpperCase(), W / 2, H * 0.40, `500 ${30 * s}px "Inter", Arial, sans-serif`, '#e6d8bb', alpha, 'center', 12 * s)
+        this.text(ctx, heading, W / 2, H * 0.40 + 150 * s, `500 ${150 * s}px "Cormorant Garamond", Georgia, serif`, '#ffffff', alpha)
+        this.text(ctx, 'Wirtualna galeria', W / 2, H * 0.40 + 230 * s, `italic 400 ${44 * s}px "Cormorant Garamond", Georgia, serif`, 'rgba(255,255,255,0.85)', alpha)
+    }
+
+    drawTeaserLabel(ctx, art, index, alpha, W, H) {
+        if (alpha <= 0) return
+        const s = W / 1920
+        const g = ctx.createLinearGradient(0, H * 0.6, 0, H)
+        g.addColorStop(0, 'rgba(20,18,15,0)')
+        g.addColorStop(1, 'rgba(20,18,15,0.78)')
+        ctx.save()
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = g
+        ctx.fillRect(0, H * 0.6, W, H * 0.4)
+        ctx.restore()
+        this.text(ctx, String(index + 1).padStart(2, '0'), 96 * s, H - 170 * s, `500 ${30 * s}px "Inter", Arial, sans-serif`, '#e6d8bb', alpha, 'left', 6 * s)
+        const label = art.drawing.title || formatDate(art.drawing.date) || ''
+        this.text(ctx, label, 96 * s, H - 96 * s, `500 ${78 * s}px "Cormorant Garamond", Georgia, serif`, '#ffffff', alpha, 'left')
+    }
+
     drawEndCard(ctx, alpha, W, H) {
         if (alpha <= 0) return
         const s = this.scale(W)
@@ -454,7 +731,7 @@ export class Reel {
         const H = Math.round(spec.size[1] * scale / 2) * 2
         this.aspect = W / H
         this.vfov = spec.fov
-        const needed = this.build(scenario, options)
+        const needed = scenario === 'teaser' ? this.buildTeaser(options) : this.build(scenario, options)
         this.missing = await this.gallery.preload(needed, onLoading)
 
         this.saved = { ratio: this.renderer.getPixelRatio(), fov: this.camera.fov }
