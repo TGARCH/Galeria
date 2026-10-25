@@ -269,7 +269,7 @@ export class Reel {
             if (d < 16) full.push(art)
             else if (d < 36) preview.push(art)
         }
-        await this.gallery.preload({ full, preview }, onLoading)
+        this.missing = await this.gallery.preload({ full, preview }, onLoading)
 
         // render w 1,5× rozdzielczości i zmniejszenie — gładkie krawędzie ram
         const SS = 1.5
@@ -300,6 +300,7 @@ export class Reel {
                 await new Promise((resolve) => setTimeout(resolve, 0))
             }
         } finally {
+            this.gallery.unpin()
             this.active = false
             this.offline = false
             this.renderer.setPixelRatio(saved.ratio)
@@ -454,7 +455,7 @@ export class Reel {
         this.aspect = W / H
         this.vfov = spec.fov
         const needed = this.build(scenario, options)
-        await this.gallery.preload(needed, onLoading)
+        this.missing = await this.gallery.preload(needed, onLoading)
 
         this.saved = { ratio: this.renderer.getPixelRatio(), fov: this.camera.fov }
         this.renderer.setPixelRatio(1)
@@ -538,6 +539,7 @@ export class Reel {
     }
 
     restore() {
+        this.gallery.unpin()
         this.active = false
         this.canvas.hidden = true
         this.renderer.setPixelRatio(this.saved.ratio)

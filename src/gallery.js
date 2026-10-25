@@ -384,6 +384,7 @@ export class Gallery {
         this.maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
         this.group = null
         this.artworks = []
+        this.pinned = new Set()     // prace potrzebne w nagraniu Studia — nie są zwalniane z pamięci
         this.colliders = []
         this.occluders = []
         this.rooms = 0
@@ -696,7 +697,7 @@ export class Gallery {
             const distance = art.world.distanceTo(cameraPosition)
             if (distance < 8 && !art.labelReady) this.makeLabel(art)
             const target = distance < 9 ? 2 : distance < 30 ? 1 : 0
-            if (art.level > 0 && distance > 40) this.unload(art)
+            if (art.level > 0 && distance > 40 && !this.pinned.has(art)) this.unload(art)
             if (!art.loadingLevel && art.level < target && now >= art.retryAt) wanted.push([target === 2 ? distance - 100 : distance, art, target])
         }
         wanted.sort((a, b) => a[0] - b[0])
@@ -738,6 +739,9 @@ export class Gallery {
     // jako podgląd; nieudane próby są ponawiane. onProgress(gotowe, wszystkie).
     async preload({ full, preview }, onProgress) {
         const jobs = [...full.map((art) => [art, 2]), ...preview.map((art) => [art, 1])]
+        // przypięcie: zwykłe zwalnianie dalekich prac (ponad 40 m od kamery) ich nie ruszy,
+        // dopóki trwa nagranie — inaczej wczytane prace znikały przed startem filmu
+        this.pinned = new Set(jobs.map(([art]) => art))
         for (const [art] of jobs) if (full.includes(art) && !art.labelReady) this.makeLabel(art)
         let done = 0
         onProgress?.(done, jobs.length)
@@ -746,7 +750,7 @@ export class Gallery {
         const worker = async () => {
             while (queue.length) {
                 const [art, level] = queue.shift()
-                for (let attempt = 0; art.level < level && attempt < 4 && performance.now() < deadline; attempt++) {
+                for (let attempt = 0; art.level < level && attempt < 6 && performance.now() < deadline; attempt++) {
                     while (art.loadingLevel) await new Promise((resolve) => setTimeout(resolve, 80))
                     if (art.level < level) await this.load(art, level)
                     if (art.level < level) await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)))
@@ -755,7 +759,16 @@ export class Gallery {
             }
         }
         await Promise.all(Array.from({ length: 6 }, worker))
+        // ostatnia, spokojna runda dla tych, które się nie udały (np. chwilowy limit Dysku)
+        for (const [art, level] of jobs) {
+            if (art.level >= level || performance.now() > deadline + 30000) continue
+            while (art.loadingLevel) await new Promise((resolve) => setTimeout(resolve, 80))
+            if (art.level < level) await this.load(art, level)
+        }
+        return jobs.filter(([art]) => art.level === 0).length     // ile prac zostało białych
     }
+
+    unpin() { this.pinned = new Set() }
 
     unload(art) {
         art.material.map?.dispose()

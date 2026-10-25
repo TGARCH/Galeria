@@ -11,6 +11,7 @@ const KINDS = { ...SCENARIOS, photos: { label: 'Zdjęcia do postów', hint: 'ka�
 const formatChoices = (kind) => Object.entries(kind === 'photos' ? PHOTO_FORMATS : FORMATS).map(([k, v], i) => `
     <label class="studio-choice"><input type="radio" name="studio-format" value="${k}"${i === 0 ? ' checked' : ''}><span><strong>${k}</strong><small>${escapeHtml(v.label.split('—')[1] || '')}</small></span></label>`).join('')
 const escapeHtml = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const missingNote = (n) => n ? ` Uwaga: ${n} ${n === 1 ? 'praca nie wczytała się' : 'prac nie wczytało się'} z Dysku (puste płótno) — spróbuj jeszcze raz za chwilę.` : ''
 const formatTime = (s) => s < 60 ? `${Math.round(s)} s` : `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s`
 
 export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afterEnd }) => {
@@ -251,7 +252,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             link.download = name
             link.click()
             setTimeout(() => URL.revokeObjectURL(url), 60000)
-            status.textContent = `Zapisano plik ${name} (${(result.blob.size / 1048576).toFixed(1)} MB).${result.extension === 'webm' ? ' Format WebM — na Instagram może być potrzebna konwersja do MP4.' : ''}`
+            status.textContent = `Zapisano plik ${name} (${(result.blob.size / 1048576).toFixed(1)} MB).${result.extension === 'webm' ? ' Format WebM — na Instagram może być potrzebna konwersja do MP4.' : ''}${missingNote(reel.missing)}`
         } else if (result.error === 'encoder') status.textContent = 'Nie udało się zakodować filmu w tej przeglądarce — spróbuj w Chrome lub Edge.'
         else if (result.error) status.textContent = 'Nie udało się przygotować trasy — zmień wybór prac.'
         else status.textContent = result.completed ? 'Podgląd zakończony.' : 'Przerwano.'
@@ -288,7 +289,7 @@ export const initStudio = async ({ reel, gallery, getDrawings, beforeStart, afte
             <div class="studio-results__grid">${photoResults.map((r) => `<a href="${r.url}" download="${r.name}" title="Pobierz ${r.name}"><img src="${r.url}" alt=""></a>`).join('')}</div>
             <p class="studio-results__hint">Kliknij zdjęcie, żeby pobrać pojedynczo.</p>`
         resultsBox.hidden = false
-        status.textContent = ''
+        status.textContent = missingNote(reel.missing).trim()
         resultsBox.querySelector('[data-zip]').addEventListener('click', async () => {
             const files = {}
             for (const r of photoResults) files[r.name] = [new Uint8Array(await r.blob.arrayBuffer()), { level: 0 }]
