@@ -6,7 +6,7 @@ export const galleryConfig = {
     // Wymiary jednej sali [m]. Sale dobudowują się w miarę przybywania rysunków.
     room: { width: 12, depth: 10, height: 4.2, wall: 0.3, doorway: 3.2 },
     // Ścianka działowa na środku każdej sali (jak w prawdziwej galerii).
-    partition: { length: 6, height: 3.3, thickness: 0.3 },
+    partition: { length: 5, height: 3.3, thickness: 0.3 },   // 5 m: ok. 3,3 m przejścia do ścian bocznych
 
     // Rama i passe-partout
     frame: {
