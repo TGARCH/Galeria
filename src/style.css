@@ -288,6 +288,18 @@ body.focused .crosshair { background: var(--ink); transform: scale(1.6); }
     text-transform: uppercase;
 }
 .lightbox__close:hover { border-color: rgba(241, 238, 232, 0.8); }
+.lightbox__share {
+    position: fixed;
+    top: 20px;
+    left: 24px;
+    padding: 10px 18px;
+    background: none;
+    border: 1px solid rgba(241, 238, 232, 0.3);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+.lightbox__share:hover { border-color: rgba(241, 238, 232, 0.8); }
 
 @media (max-width: 640px) {
     .hud__caption { bottom: 180px; max-width: 86vw; }

@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { inject } from '@vercel/analytics'
 import { galleryConfig as cfg } from './config.js'
 import { Gallery } from './gallery.js'
-import { Tour } from './tour.js'
+import { Grid, Tour } from './tour.js'
 import { Reel } from './reel.js'
 import { initStudio } from './studio.js'
 import { fetchRooms, imageUrl, isDemo, displayTitle, formatDate } from './drawings.js'
@@ -18,7 +18,7 @@ const isTouchDevice = window.matchMedia('(pointer: coarse) and (hover: none)').m
 const applyTitles = () => {
     document.querySelector('[data-title]').textContent = cfg.title
     document.querySelector('[data-subtitle]').textContent = cfg.subtitle
-    document.title = `${cfg.subtitle} · ${cfg.title}`
+    document.title = `${cfg.title} — ${cfg.subtitle}`
 }
 applyTitles()
 
@@ -71,11 +71,29 @@ const notice = $('[data-notice]')
 const pluralWorks = (n) => n === 1 ? '1 rysunek'
     : `${n} ${n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'rysunki' : 'rysunków'}`
 
+// Link do pracy: ?praca=ID — odwiedzający zaczyna przed tym rysunkiem
+const sharedWork = new URLSearchParams(window.location.search).get('praca')
+
 const placeVisitor = () => {
     const spawn = gallery.spawn
     camera.position.set(spawn.x, eyeHeight, spawn.z)
     yaw = spawn.yaw
     pitch = 0
+    const art = sharedWork && gallery.artworks.find((a) => a.drawing.id === sharedWork)
+    if (!art) return
+    const d = THREE.MathUtils.clamp(art.outerH * 1.6, 1.9, 2.8)
+    const grid = gallery.bounds ? new Grid(gallery.bounds, gallery.colliders) : null
+    let spot = null
+    for (let k = d; k >= 1.2 && !spot; k -= 0.2) {
+        const x = art.world.x + art.normal.x * k
+        const z = art.world.z + art.normal.z * k
+        if (!grid || grid.freeAt(x, z)) spot = { x, z }
+    }
+    spot ||= { x: art.world.x + art.normal.x * 1.4, z: art.world.z + art.normal.z * 1.4 }
+    camera.position.set(spot.x, eyeHeight, spot.z)
+    yaw = Math.atan2(-(art.world.x - spot.x), -(art.world.z - spot.z))
+    pitch = 0
+    countLabel.textContent = `Zaproszenie do pracy: ${displayTitle(art.drawing)}`
 }
 
 const applyRooms = (rooms, firstLoad = false) => {
@@ -424,6 +442,23 @@ const closeLightbox = () => {
 const stepLightbox = (direction) => showLightboxItem(lightboxIndex + direction)
 
 $('.lightbox__close').addEventListener('click', closeLightbox)
+
+// Udostępnianie: link otwiera galerię przed tą pracą (na Facebooku z jej zdjęciem)
+const shareButton = $('.lightbox__share')
+shareButton.addEventListener('click', async () => {
+    const drawing = drawings[lightboxIndex]
+    if (!drawing) return
+    const url = `${window.location.origin}/?praca=${encodeURIComponent(drawing.id)}`
+    const title = `${displayTitle(drawing)} — ${cfg.title}`
+    try {
+        if (isTouchDevice && navigator.share) { await navigator.share({ title, url }); return }
+        await navigator.clipboard.writeText(url)
+        shareButton.textContent = 'Skopiowano link'
+    } catch {
+        window.prompt('Link do tej pracy:', url)
+    }
+    window.setTimeout(() => { shareButton.textContent = 'Udostępnij link' }, 2200)
+})
 $('.lightbox__prev').addEventListener('click', () => stepLightbox(-1))
 $('.lightbox__next').addEventListener('click', () => stepLightbox(1))
 lightbox.addEventListener('click', (event) => { if (event.target === lightbox) closeLightbox() })
