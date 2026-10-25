@@ -214,7 +214,8 @@ const planRoom = (room, count, doors) => {
         for (let b = bands - 1; b >= 0; b--) positions.push(-(HALL_HALF + b * BAND + BAND / 2))
         for (let b = 0; b < bands; b++) positions.push(HALL_HALF + b * BAND + BAND / 2)
         const cx = x0 + W / 2
-        positions.forEach((zc, i) => {
+        positions.forEach((zc0, i) => {
+            let zc = zc0
             const across = partitionCount >= 4 && i % 2 === 1
             if (!across) {
                 const len = P.length
@@ -223,6 +224,13 @@ const planRoom = (room, count, doors) => {
                 line(cx + len / 2 - 0.3, cx - len / 2 + 0.3, 3, (x, span) => add(x, zc + P.thickness / 2, 0, span))
             } else {
                 const len = PART_Z_LENGTH
+                // ścianka wzdłuż sali w skrajnym paśmie: przesunięta ku środkowi, żeby
+                // przejście do ściany szczytowej i do sąsiedniej ścianki było podobne (~3 m)
+                if (Math.abs(zc) > half - BAND) {
+                    const outer = half - T / 2 - (Math.abs(zc) + len / 2)
+                    const inner = (Math.abs(zc) - len / 2) - (Math.abs(zc) - BAND + P.thickness / 2)
+                    zc -= Math.sign(zc) * Math.max(0, (inner - outer) / 2)
+                }
                 partitions.push({ x: cx, z: zc, sx: P.thickness, sz: len })
                 line(zc - len / 2 + 0.2, zc + len / 2 - 0.2, 2, (z, span) => add(cx - P.thickness / 2, z, -Math.PI / 2, span))
                 line(zc + len / 2 - 0.2, zc - len / 2 + 0.2, 2, (z, span) => add(cx + P.thickness / 2, z, Math.PI / 2, span))
