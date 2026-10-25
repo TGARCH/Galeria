@@ -409,7 +409,7 @@ let lightboxIndex = 0
 const showLightboxItem = (index) => {
     lightboxIndex = (index + drawings.length) % drawings.length
     const drawing = drawings[lightboxIndex]
-    lightboxImage.src = imageUrl(drawing, isTouchDevice ? 1600 : 2400)
+    lightboxImage.src = imageUrl(drawing, isTouchDevice ? 1600 : 2400, { credit: true })
     lightboxImage.alt = displayTitle(drawing)
     lightboxNumber.textContent = `${String(lightboxIndex + 1).padStart(2, '0')} / ${String(drawings.length).padStart(2, '0')}`
     lightboxTitle.textContent = displayTitle(drawing)

@@ -32,6 +32,11 @@ Przycisk „Spacer automatyczny” na ekranie startowym albo adres z `?spacer`
 wraca płynnie na początek. Ruch myszą, klawisz lub dotyk przerywa spacer; z `?spacer`
 wraca on sam po minucie bezczynności. Parametry: `src/tour.js` (tempo, czas oglądania).
 
+## Prawa autorskie
+
+Powiększenie rysunku (i plik z niego zapisany) ma stopkę „© rok Właściciel. Wszelkie prawa zastrzeżone.”
+oraz informację o prawach w metadanych pliku (EXIF). Obrazy na ścianach galerii są bez stopki.
+
 ## Studio — rolki do social mediów (tylko dla właściciela)
 
 Wejście raz przez `https://<adres galerii>/?studio=KLUCZ` (KLUCZ = wartość `STUDIO_KEY`)
@@ -52,6 +57,7 @@ JPG 4:5 / 1:1 / 1,91:1, do pobrania pojedynczo lub w ZIP-ie.
 | `DRIVE_FOLDER_ID` | ID folderu (folder udostępniony: „Każdy, kto ma link → Przeglądający”) |
 | `GALLERY_TITLE` | tytuł galerii (opcjonalnie, domyślnie z `src/config.js`) |
 | `GALLERY_SUBTITLE` | podtytuł, np. „Rysunki” albo „Prace z kursu” (opcjonalnie) |
+| `COPYRIGHT_HOLDER` | właściciel praw w stopce powiększenia (opcjonalnie; domyślnie `GALLERY_TITLE`) |
 | `STUDIO_KEY` | tajne hasło do Studia (opcjonalnie; bez niego Studio jest wyłączone) |
 
 ## Kilka galerii z jednego kodu

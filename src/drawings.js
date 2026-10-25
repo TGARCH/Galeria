@@ -17,9 +17,10 @@ export const fetchRooms = async () => {
     return body.rooms
 }
 
-export const imageUrl = (drawing, width) => drawing.demo
+// credit: true — wersja do powiększenia, ze stopką o prawach autorskich (dodaje serwer)
+export const imageUrl = (drawing, width, { credit = false } = {}) => drawing.demo
     ? demoCanvas(drawing).toDataURL('image/jpeg', 0.9)
-    : `/api/image?id=${encodeURIComponent(drawing.id)}&w=${width}&v=2&r=${encodeURIComponent(drawing.rev || '')}`
+    : `/api/image?id=${encodeURIComponent(drawing.id)}&w=${width}&v=2&r=${encodeURIComponent(drawing.rev || '')}${credit ? '&c=1' : ''}`
 
 const textureLoader = new THREE.TextureLoader()
 

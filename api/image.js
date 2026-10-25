@@ -1,5 +1,6 @@
 import sharp from 'sharp'
 import { fileMeta, listGallery, mediaUrl, sendError } from './_drive.js'
+import { addCredit, creditText } from './_credit.js'
 
 // Lista ID z folderu galerii i jego podfolderów, trzymana w pamięci instancji przez minutę.
 // (Przy anonimowym kluczu API Drive nie zwraca pola "parents", więc przynależność
@@ -70,6 +71,13 @@ export default async function handler(req, res) {
             if (rotated) { buffer = rotated; type = 'image/jpeg' }
         } catch (error) {
             console.warn('Nie udało się sprawdzić orientacji', id, error.message)
+        }
+        // powiększenie (?c=1): stopka z prawami autorskimi + informacja w metadanych pliku
+        if (req.query.c === '1') {
+            const host = req.headers['x-forwarded-host'] || req.headers.host
+            const year = (file.createdTime || new Date().toISOString()).slice(0, 4)
+            buffer = await addCredit(sharp, buffer, creditText({ year, host }))
+            type = 'image/jpeg'
         }
         res.setHeader('Content-Type', type)
         res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=2592000, stale-while-revalidate=86400')
