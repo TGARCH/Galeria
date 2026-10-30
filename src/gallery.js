@@ -152,6 +152,11 @@ const P = cfg.partition
 // Mała sala: same ściany. Większa: ścianki wolnostojące w pasach po obu stronach osi
 // (zawsze parami: północ + południe); przy 4 i więcej — na przemian wzdłuż i w poprzek.
 const HALL_HALF = D / 2          // połowa głębokości sali bez ścianek
+// W sali ze ściankami wolny pas wokół osi jest węższy (±3,5 m zamiast ±5 m), żeby
+// środek nie był pustym placem. Przejścia leżą do ±3 m od osi (krawędź do ±4,6 m),
+// a najbliższa ścianka zaczyna się ok. 4,8 m od osi i stoi pośrodku sali, z dala
+// od ścian z przejściami — droga między przejściami pozostaje wolna.
+const CORE_HALF = 3.5
 const BAND = 7                   // głębokość pasa na jedną ściankę
 const PART_Z_LENGTH = 4.4        // ścianka ustawiona w poprzek (wzdłuż osi Z) jest krótsza
 const SLOT_STEP = 2.0
@@ -168,7 +173,7 @@ const planRoom = (room, count, doors) => {
     const x0 = room * W
     const build = (partitionCount) => {
         const bands = Math.ceil(partitionCount / 2)
-        const half = HALL_HALF + bands * BAND
+        const half = bands ? CORE_HALF + bands * BAND : HALL_HALF
         const slots = []
         const add = (x, z, rotY, span) => slots.push({ x, z, rotY, span, room })
         const line = (from, to, n, place) => {
@@ -211,8 +216,8 @@ const planRoom = (room, count, doors) => {
         // wzdłuż i w poprzek
         const partitions = []
         const positions = []
-        for (let b = bands - 1; b >= 0; b--) positions.push(-(HALL_HALF + b * BAND + BAND / 2))
-        for (let b = 0; b < bands; b++) positions.push(HALL_HALF + b * BAND + BAND / 2)
+        for (let b = bands - 1; b >= 0; b--) positions.push(-(CORE_HALF + b * BAND + BAND / 2))
+        for (let b = 0; b < bands; b++) positions.push(CORE_HALF + b * BAND + BAND / 2)
         const cx = x0 + W / 2
         positions.forEach((zc0, i) => {
             let zc = zc0
