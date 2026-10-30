@@ -157,6 +157,7 @@ const HALL_HALF = D / 2          // połowa głębokości sali bez ścianek
 // a najbliższa ścianka zaczyna się ok. 4,8 m od osi i stoi pośrodku sali, z dala
 // od ścian z przejściami — droga między przejściami pozostaje wolna.
 const CORE_HALF = 3.5
+const ONE_BAND_EXTRA = 1.4
 const BAND = 7                   // głębokość pasa na jedną ściankę
 const PART_Z_LENGTH = 4.4        // ścianka ustawiona w poprzek (wzdłuż osi Z) jest krótsza
 const SLOT_STEP = 2.0
@@ -173,7 +174,9 @@ const planRoom = (room, count, doors) => {
     const x0 = room * W
     const build = (partitionCount) => {
         const bands = Math.ceil(partitionCount / 2)
-        const half = bands ? CORE_HALF + bands * BAND : HALL_HALF
+        // przy jednym paśmie ścianka w poprzek stoi blisko ściany szczytowej — sala jest
+        // wtedy nieco głębsza, żeby za ścianką zostało ok. 2,5 m przejścia
+        const half = bands ? CORE_HALF + bands * BAND + (bands === 1 ? ONE_BAND_EXTRA : 0) : HALL_HALF
         const slots = []
         const add = (x, z, rotY, span) => slots.push({ x, z, rotY, span, room })
         const line = (from, to, n, place) => {
@@ -211,17 +214,18 @@ const planRoom = (room, count, doors) => {
         if (westSlots) sideLine(west.north, x0 + T / 2, Math.PI / 2, true)
         northX.forEach((x) => add(x, -inner, 0, wallStep))
         sideLine(east.north, x0 + W - T / 2, -Math.PI / 2, false)
-        // ścianki wolnostojące — zawsze parami (po jednej w każdej połowie sali), żeby nie
-        // zostawały puste place; kolejno od północy do południa, przy 4 i więcej na przemian
-        // wzdłuż i w poprzek
+        // ścianki wolnostojące — zawsze parami (po jednej w każdej połowie sali, symetrycznie).
+        // Najpierw relacja do przejścia: w pierwszym paśmie od osi ścianki stoją w poprzek
+        // sali (wzdłuż osi Z), frontem do wchodzącego. Dalej względem siebie: każde kolejne
+        // pasmo obrócone o 90° względem poprzedniego.
         const partitions = []
         const positions = []
-        for (let b = bands - 1; b >= 0; b--) positions.push(-(CORE_HALF + b * BAND + BAND / 2))
-        for (let b = 0; b < bands; b++) positions.push(CORE_HALF + b * BAND + BAND / 2)
+        for (let b = bands - 1; b >= 0; b--) positions.push({ b, zc: -(CORE_HALF + b * BAND + BAND / 2) })
+        for (let b = 0; b < bands; b++) positions.push({ b, zc: CORE_HALF + b * BAND + BAND / 2 })
         const cx = x0 + W / 2
-        positions.forEach((zc0, i) => {
+        positions.forEach(({ b, zc: zc0 }) => {
             let zc = zc0
-            const across = partitionCount >= 4 && i % 2 === 1
+            const across = b % 2 === 0
             if (!across) {
                 const len = P.length
                 partitions.push({ x: cx, z: zc, sx: len, sz: P.thickness })
@@ -229,9 +233,10 @@ const planRoom = (room, count, doors) => {
                 line(cx + len / 2 - 0.3, cx - len / 2 + 0.3, 3, (x, span) => add(x, zc + P.thickness / 2, 0, span))
             } else {
                 const len = PART_Z_LENGTH
-                // ścianka wzdłuż sali w skrajnym paśmie: przesunięta ku środkowi, żeby
-                // przejście do ściany szczytowej i do sąsiedniej ścianki było podobne (~3 m)
-                if (Math.abs(zc) > half - BAND) {
+                // ścianka w poprzek w skrajnym paśmie (poza pierwszym): przesunięta ku środkowi,
+                // żeby przejście do ściany szczytowej i do sąsiedniej ścianki było podobne (~3 m).
+                // Pierwszego pasma nie przesuwamy — strefa przejść przy osi zostaje wolna.
+                if (b > 0 && b === bands - 1) {
                     const outer = half - T / 2 - (Math.abs(zc) + len / 2)
                     const inner = (Math.abs(zc) - len / 2) - (Math.abs(zc) - BAND + P.thickness / 2)
                     zc -= Math.sign(zc) * Math.max(0, (inner - outer) / 2)
