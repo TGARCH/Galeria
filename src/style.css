@@ -126,9 +126,16 @@ kbd {
 }
 
 .touch-only { display: none; }
-@media (pointer: coarse) and (hover: none) {
+/* każdy ekran dotykowy — także laptop hybrydowy — pokazuje instrukcję dotykową */
+@media (any-pointer: coarse) {
     .touch-only { display: flex; }
+}
+/* klawiszową chowamy tylko tam, gdzie nie ma touchpada ani myszy (telefon, tablet) */
+@media (pointer: coarse) and (hover: none) and (not (any-pointer: fine)) {
     .desktop-only { display: none; }
+}
+@media (any-pointer: coarse) and (any-pointer: fine) {
+    .instructions.touch-only { margin-top: 10px; }
 }
 
 /* ——— HUD ——— */

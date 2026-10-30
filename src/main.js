@@ -13,7 +13,13 @@ inject()
 
 const $ = (selector) => document.querySelector(selector)
 const canvas = $('canvas.webgl')
+// Wydajność (rozdzielczość, wielkość tekstur) dobieramy raz, według urządzenia.
 const isTouchDevice = window.matchMedia('(pointer: coarse) and (hover: none)').matches
+// Sposób sterowania podąża za tym, czego zwiedzający właśnie użył. Na laptopach
+// hybrydowych (ekran dotykowy + touchpad) można w każdej chwili przejść z palca
+// na touchpad i z powrotem, bez odświeżania strony. Klawiatura działa zawsze.
+let touchMode = isTouchDevice
+window.addEventListener('pointerdown', (event) => { touchMode = event.pointerType !== 'mouse' }, true)
 
 const applyTitles = () => {
     document.querySelector('[data-title]').textContent = cfg.title
@@ -176,27 +182,54 @@ let lookStart = null
 let lastLookX = 0
 let lastLookY = 0
 
-const navigationActive = () => isTouchDevice ? mobileActive : document.pointerLockElement === canvas
+const pointerLocked = () => document.pointerLockElement === canvas
+const navigationActive = () => mobileActive || pointerLocked()
 
 const showStartPanel = (show) => {
     startPanel.classList.toggle('hidden', !show)
     startButton.textContent = hasEntered ? 'Wróć do galerii' : 'Wejdź do galerii'
-    document.body.classList.toggle('walking', !show && !isTouchDevice)
+    document.body.classList.toggle('walking', !show && !mobileActive)
+}
+
+const resetMobileInput = () => {
+    mobileForward = mobileSide = 0
+    mobileRunning = false
+    mobileRunButton.classList.remove('pressed')
+    joystickKnob.style.transform = 'translate(0, 0)'
 }
 
 const setMobileNavigation = (active) => {
     mobileActive = active
     mobileControls.classList.toggle('active', active)
     showStartPanel(!active)
-    if (!active) {
-        mobileForward = mobileSide = 0
-        joystickKnob.style.transform = 'translate(0, 0)'
-    }
+    if (!active) resetMobileInput()
+}
+
+// blokada kursora; jeśli przeglądarka odmówi, pokaż panel pauzy
+const lockPointer = () => {
+    canvas.requestPointerLock()
+    window.setTimeout(() => {
+        if (!pointerLocked() && !mobileActive && !lightboxOpen && !tour.active && !studioBusy) showStartPanel(true)
+    }, 250)
+}
+
+// palec → joystick i rozglądanie przesunięciem
+const enterTouchNavigation = () => {
+    setMobileNavigation(true)
+    if (document.pointerLockElement) document.exitPointerLock()
+}
+
+// touchpad / mysz → blokada kursora, rozglądanie ruchem myszy
+const enterPointerNavigation = () => {
+    mobileActive = false
+    mobileControls.classList.remove('active')
+    resetMobileInput()
+    lockPointer()
 }
 
 const requestControls = () => {
-    if (isTouchDevice) setMobileNavigation(true)
-    else canvas.requestPointerLock()
+    if (touchMode) enterTouchNavigation()
+    else enterPointerNavigation()
 }
 
 startButton.addEventListener('click', () => {
@@ -205,18 +238,18 @@ startButton.addEventListener('click', () => {
 })
 
 canvas.addEventListener('click', () => {
-    if (isTouchDevice || lightboxOpen) return
-    if (document.pointerLockElement === canvas) {
+    if (touchMode || lightboxOpen) return
+    if (pointerLocked()) {
         if (focused) openLightbox(focused.index)
         return
     }
-    if (hasEntered) requestControls()
+    if (hasEntered) enterPointerNavigation()
 })
 
 document.addEventListener('pointerlockchange', () => {
-    const active = document.pointerLockElement === canvas
+    const active = pointerLocked()
     if (!active) pressedKeys.clear()
-    if (!lightboxOpen && !tour.active && !studioBusy) showStartPanel(!active)
+    if (!lightboxOpen && !tour.active && !studioBusy && !mobileActive) showStartPanel(!active)
 })
 
 document.addEventListener('mousemove', (event) => {
@@ -272,7 +305,13 @@ joystick.addEventListener('pointercancel', releaseJoystick)
 
 // rozglądanie palcem + dotknięcie rysunku
 canvas.addEventListener('pointerdown', (event) => {
-    if (!isTouchDevice || !mobileActive || lookPointerId !== null) return
+    if (event.pointerType === 'mouse' || lightboxOpen || tour.active || studioBusy) return
+    // dotknięcie ekranu podczas spaceru touchpadem przełącza na sterowanie dotykowe
+    if (!mobileActive) {
+        if (!pointerLocked()) return
+        enterTouchNavigation()
+    }
+    if (lookPointerId !== null) return
     lookPointerId = event.pointerId
     lastLookX = event.clientX
     lastLookY = event.clientY
@@ -326,16 +365,17 @@ const updateWalk = (deltaTime) => {
     let forwardInput = 0
     let sideInput = 0
     if (navigationActive()) {
-        forwardInput = isTouchDevice ? mobileForward
-            : Number(pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp')) - Number(pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown'))
-        sideInput = isTouchDevice ? mobileSide
-            : Number(pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight')) - Number(pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft'))
+        // joystick i klawiatura działają razem — na laptopie hybrydowym obie naraz
+        const keyForward = Number(pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp')) - Number(pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown'))
+        const keySide = Number(pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight')) - Number(pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft'))
+        forwardInput = THREE.MathUtils.clamp(mobileForward + keyForward, -1, 1)
+        sideInput = THREE.MathUtils.clamp(mobileSide + keySide, -1, 1)
     }
     forward.set(-Math.sin(yaw), 0, -Math.cos(yaw))
     right.set(Math.cos(yaw), 0, -Math.sin(yaw))
     movement.copy(forward).multiplyScalar(forwardInput).addScaledVector(right, sideInput)
     if (movement.lengthSq() > 1) movement.normalize()
-    const fast = isTouchDevice ? mobileRunning : pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight')
+    const fast = mobileRunning || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight')
     movement.multiplyScalar(fast ? fastWalkSpeed : walkSpeed)
 
     // łagodne ruszanie i zatrzymywanie — spokojny, „muzealny” krok
@@ -378,7 +418,7 @@ let lastFocusCheck = 0
 const updateFocus = (elapsed) => {
     if (elapsed - lastFocusCheck < 0.1) return
     lastFocusCheck = elapsed
-    const art = tour.active ? null : navigationActive() && !isTouchDevice ? pickArtwork(center, 4.5) : null
+    const art = tour.active ? null : pointerLocked() ? pickArtwork(center, 4.5) : null
     if (!tour.active && art !== focused) {
         focused = art
         caption.hidden = !art
@@ -424,19 +464,16 @@ const openLightbox = (index) => {
     lightbox.hidden = false
     caption.hidden = true
     if (document.pointerLockElement) document.exitPointerLock()
-    if (isTouchDevice) mobileControls.classList.remove('active')
+    mobileControls.classList.remove('active')
 }
 
 const closeLightbox = () => {
     lightboxOpen = false
     lightbox.hidden = true
     lightboxImage.removeAttribute('src')
-    if (isTouchDevice) mobileControls.classList.toggle('active', mobileActive)
-    else {
-        canvas.requestPointerLock()
-        // jeśli przeglądarka odmówi blokady kursora, pokaż panel pauzy
-        window.setTimeout(() => { if (document.pointerLockElement !== canvas && !lightboxOpen) showStartPanel(true) }, 250)
-    }
+    // wracamy do spaceru tym sposobem, którym zamknięto podgląd
+    if (touchMode) setMobileNavigation(true)
+    else enterPointerNavigation()
 }
 
 const stepLightbox = (direction) => showLightboxItem(lightboxIndex + direction)
@@ -451,7 +488,7 @@ shareButton.addEventListener('click', async () => {
     const url = `${window.location.origin}/?praca=${encodeURIComponent(drawing.id)}`
     const title = `${displayTitle(drawing)} — ${cfg.title}`
     try {
-        if (isTouchDevice && navigator.share) { await navigator.share({ title, url }); return }
+        if (touchMode && navigator.share) { await navigator.share({ title, url }); return }
         await navigator.clipboard.writeText(url)
         shareButton.textContent = 'Skopiowano link'
     } catch {
@@ -492,7 +529,9 @@ function startTour() {
     if (document.pointerLockElement) document.exitPointerLock()
     showStartPanel(false)
     document.body.classList.add('touring')
+    mobileActive = false
     mobileControls.classList.remove('active')
+    resetMobileInput()
     velocity.set(0, 0, 0)
     tour.start(yaw, pitch)
 }
