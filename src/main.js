@@ -329,7 +329,7 @@ canvas.addEventListener('pointermove', (event) => {
 const releaseLook = (event) => {
     if (event.pointerId !== lookPointerId) return
     lookPointerId = null
-    const tap = lookStart && Math.hypot(event.clientX - lookStart.x, event.clientY - lookStart.y) < 10 && performance.now() - lookStart.t < 350
+    const tap = lookStart && Math.hypot(event.clientX - lookStart.x, event.clientY - lookStart.y) < 14 && performance.now() - lookStart.t < 450
     if (tap && event.type === 'pointerup') {
         const pointer = new THREE.Vector2(event.clientX / window.innerWidth * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1)
         const art = pickArtwork(pointer, 6)
@@ -338,6 +338,10 @@ const releaseLook = (event) => {
 }
 canvas.addEventListener('pointerup', releaseLook)
 canvas.addEventListener('pointercancel', releaseLook)
+// Canvas obsługuje dotyk wyłącznie przez Pointer Events. Bez tego po stuknięciu
+// przeglądarka wysyła jeszcze „kliknięcie”, które trafia w świeżo otwarty
+// podgląd (w tło) i natychmiast go zamyka.
+canvas.addEventListener('touchend', (event) => { if (event.cancelable) event.preventDefault() }, { passive: false })
 
 mobileRunButton.addEventListener('pointerdown', (event) => {
     event.stopPropagation()
@@ -460,6 +464,7 @@ const showLightboxItem = (index) => {
 const openLightbox = (index) => {
     if (!drawings.length) return
     lightboxOpen = true
+    lightboxOpenedAt = performance.now()
     showLightboxItem(index)
     lightbox.hidden = false
     caption.hidden = true
@@ -477,6 +482,16 @@ const closeLightbox = () => {
 }
 
 const stepLightbox = (direction) => showLightboxItem(lightboxIndex + direction)
+
+// zaraz po otwarciu podgląd nie reaguje na kliknięcia — to zwykle echo
+// stuknięcia, które go otworzyło, a nie zamiar zamknięcia
+let lightboxOpenedAt = 0
+lightbox.addEventListener('click', (event) => {
+    if (performance.now() - lightboxOpenedAt < 450) {
+        event.stopImmediatePropagation()
+        event.preventDefault()
+    }
+}, true)
 
 $('.lightbox__close').addEventListener('click', closeLightbox)
 
