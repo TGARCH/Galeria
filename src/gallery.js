@@ -152,11 +152,12 @@ const P = cfg.partition
 // Mała sala: same ściany. Większa: ścianki wolnostojące w pasach po obu stronach osi
 // (zawsze parami: północ + południe); przy 4 i więcej — na przemian wzdłuż i w poprzek.
 const HALL_HALF = D / 2          // połowa głębokości sali bez ścianek
-// W sali ze ściankami wolny pas wokół osi jest węższy (±3,5 m zamiast ±5 m), żeby
-// środek nie był pustym placem. Przejścia leżą do ±3 m od osi (krawędź do ±4,6 m),
-// a najbliższa ścianka zaczyna się ok. 4,8 m od osi i stoi pośrodku sali, z dala
-// od ścian z przejściami — droga między przejściami pozostaje wolna.
-const CORE_HALF = 3.5
+// W sali ze ściankami wolny pas wokół osi jest węższy (±2 m zamiast ±5 m), żeby
+// środek nie był pustym placem. Pierwsze ścianki stoją równolegle do osi, pośrodku
+// sali, z dala od ścian z przejściami — droga między przejściami pozostaje wolna.
+const CORE_HALF = 2
+// dodatkowy odstęp skrajnych ścianek od ściany szczytowej sali
+const END_EXTRA = 1
 const BAND = 7                   // głębokość pasa na jedną ściankę
 const PART_Z_LENGTH = 4.4        // ścianka ustawiona w poprzek (wzdłuż osi Z) jest krótsza
 const SLOT_STEP = 2.0
@@ -173,7 +174,8 @@ const planRoom = (room, count, doors) => {
     const x0 = room * W
     const build = (partitionCount) => {
         const bands = Math.ceil(partitionCount / 2)
-        const half = bands ? CORE_HALF + bands * BAND : HALL_HALF
+        const bandsHalf = CORE_HALF + bands * BAND
+        const half = bands ? bandsHalf + END_EXTRA : HALL_HALF
         const slots = []
         const add = (x, z, rotY, span) => slots.push({ x, z, rotY, span, room })
         const line = (from, to, n, place) => {
@@ -233,7 +235,7 @@ const planRoom = (room, count, doors) => {
                 // ścianka w poprzek w skrajnym paśmie: przesunięta ku środkowi, żeby przejście
                 // do ściany szczytowej i do sąsiedniej ścianki było podobne (~3 m)
                 if (b === bands - 1) {
-                    const outer = half - T / 2 - (Math.abs(zc) + len / 2)
+                    const outer = bandsHalf - T / 2 - (Math.abs(zc) + len / 2)
                     const inner = (Math.abs(zc) - len / 2) - (Math.abs(zc) - BAND + P.thickness / 2)
                     zc -= Math.sign(zc) * Math.max(0, (inner - outer) / 2)
                 }
