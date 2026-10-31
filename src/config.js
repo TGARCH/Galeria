@@ -30,5 +30,6 @@ export const shadowTest = {
     decals: new URLSearchParams(window.location.search).has('cienie')
 }
 
-// Test szkła (?szklo): tafla szkła w ramie, odbijająca światło coraz mocniej pod kątem
-export const glassTest = new URLSearchParams(window.location.search).has('szklo')
+// Test szkła (?szklo lub ?szkło): tafla szkła w ramie, odbijająca światło coraz mocniej pod kątem
+const glassParams = new URLSearchParams(window.location.search)
+export const glassTest = glassParams.has('szklo') || glassParams.has('szkło')
