@@ -24,12 +24,8 @@ export const galleryConfig = {
     refreshInterval: 90
 }
 
-// Test cieni (tylko z parametrem w adresie, produkcja bez zmian):
-//   ?cienie        — oba rodzaje
-//   ?cienie=ao     — tylko cienie kontaktowe: miękkie przyciemnienie przy styku ścian z podłogą
-//   ?cienie=plamy  — tylko miękkie cienie ram od reflektorów i ścianek na podłodze
-const shadowParam = new URLSearchParams(window.location.search).get('cienie')
+// Test cieni (tylko z parametrem ?cienie w adresie, produkcja bez zmian):
+// miękkie cienie ram od reflektorów i rozproszone plamy cienia wokół ścianek na podłodze
 export const shadowTest = {
-    ao: shadowParam !== null && shadowParam !== 'plamy',
-    decals: shadowParam !== null && shadowParam !== 'ao'
+    decals: new URLSearchParams(window.location.search).has('cienie')
 }
