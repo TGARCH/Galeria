@@ -24,13 +24,10 @@ export const galleryConfig = {
     glass: 10,
     // Miękkie cienie ram od reflektorów i rozproszone plamy cienia wokół ścianek na podłodze
     softShadows: true,
+    // Kameralny nastrój: światło 70%, ciepłe reflektory ok. 2800 K z wyraźniejszymi plamami,
+    // nieco ciemniejsze ściany, podłoga w tonie orzecha, mgiełka w głębi, winieta, wolniejszy krok
+    mood: true,
 
     // Jak często sprawdzać, czy na Dysku pojawiły się nowe pliki [s]
     refreshInterval: 90
 }
-
-// Test kameralnego nastroju (?nastrój lub ?nastroj): światło 70%, ciepłe reflektory
-// (ok. 2800 K), mocniejsze plamy światła na pracach, nieco ciemniejsze ściany, podłoga
-// w kolorze orzecha, lekkie przyciemnienie w głębi i na brzegach ekranu, wolniejszy krok
-const moodParams = new URLSearchParams(window.location.search)
-export const moodTest = moodParams.has('nastrój') || moodParams.has('nastroj')

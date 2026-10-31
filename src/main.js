@@ -2,7 +2,7 @@ import './style.css'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { inject } from '@vercel/analytics'
-import { galleryConfig as cfg, moodTest } from './config.js'
+import { galleryConfig as cfg } from './config.js'
 
 import { Gallery } from './gallery.js'
 import { Grid, Tour } from './tour.js'
@@ -45,11 +45,11 @@ renderer.toneMappingExposure = 1.0
 
 const pmrem = new THREE.PMREMGenerator(renderer)
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-// kameralny nastrój (?nastrój): światło 70%, cieplejsze; dalsze partie sali lekko przygaszone
-const light = moodTest ? 0.7 : 1
+// kameralny nastrój (cfg.mood): światło 70%, cieplejsze; dalsze partie sali lekko przygaszone
+const light = cfg.mood ? 0.7 : 1
 scene.environmentIntensity = 0.35 * light
-scene.add(new THREE.HemisphereLight(moodTest ? 0xffe9d0 : 0xffffff, moodTest ? 0xc9bfb2 : 0xd9d4ca, 2.1 * light))
-if (moodTest) {
+scene.add(new THREE.HemisphereLight(cfg.mood ? 0xffe9d0 : 0xffffff, cfg.mood ? 0xc9bfb2 : 0xd9d4ca, 2.1 * light))
+if (cfg.mood) {
     scene.background.set(0x4a4540)
     scene.fog = new THREE.Fog(0x4a4540, 20, 120)
     // winieta: delikatne przyciemnienie brzegów ekranu (tylko podgląd, nie w filmach ze studia)
@@ -61,8 +61,8 @@ if (moodTest) {
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 80)
 const eyeHeight = 1.62
 const visitorRadius = 0.25
-const walkSpeed = moodTest ? 3.0 : 3.8
-const fastWalkSpeed = moodTest ? 5.5 : 7.0
+const walkSpeed = cfg.mood ? 3.0 : 3.8
+const fastWalkSpeed = cfg.mood ? 5.5 : 7.0
 scene.add(camera)
 
 window.addEventListener('resize', () => {

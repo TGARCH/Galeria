@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { galleryConfig as cfg, moodTest } from './config.js'
+import { galleryConfig as cfg } from './config.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
@@ -140,11 +140,11 @@ const materials = {
     floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
 }
 
-// Kameralny nastrój (?nastrój): ciepłe reflektory ok. 2800 K, wyraźniejsze plamy światła,
+// Kameralny nastrój (cfg.mood): ciepłe reflektory ok. 2800 K, wyraźniejsze plamy światła,
 // ściany nieco ciemniejsze, podłoga orzechowa (ten sam rysunek desek, ciemniejszy i cieplejszy
 // ton), świetliki przygaszone
 const WARM_SPOT = 0xffb877        // barwa światła ok. 2800 K
-if (moodTest) {
+if (cfg.mood) {
     materials.wall.color.set(0xb8b4ae)
     materials.baseboard.color.set(0x9d9993)
     materials.floor.color.set(0x9a755c)
