@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { galleryConfig as cfg } from './config.js'
+import { galleryConfig as cfg, moodTest } from './config.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
@@ -133,11 +133,27 @@ const materials = {
     fixtureInner: new THREE.MeshStandardMaterial({ color: 0x2a2927, roughness: 0.6 }),
     lens: new THREE.MeshBasicMaterial({ color: 0xfff4e2, toneMapped: false }),
     track: new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 0.4, metalness: 0.1 }),
-    glow: new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }),
+    glow: new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
     placeholder: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 1 }),
     // miękkie cienie (cfg.softShadows)
     frameShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }),
     floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+}
+
+// Kameralny nastrój (?nastrój): ciepłe reflektory ok. 2800 K, wyraźniejsze plamy światła,
+// ściany nieco ciemniejsze, podłoga orzechowa (ten sam rysunek desek, ciemniejszy i cieplejszy
+// ton), świetliki przygaszone
+const WARM_SPOT = 0xffb877        // barwa światła ok. 2800 K
+if (moodTest) {
+    materials.wall.color.set(0xb8b4ae)
+    materials.baseboard.color.set(0x9d9993)
+    materials.floor.color.set(0x9a755c)
+    materials.floor.envMapIntensity = 0.6
+    materials.lightPanel.color.setScalar(0.55)
+    materials.lens.color.set(0xffd2a0)
+    materials.glow.color.set(WARM_SPOT)
+    materials.glow.opacity = 0.2
+    materials.mat.emissive.set(0xffdcb0)
 }
 
 // ————————————————————————————————————————————————
@@ -695,7 +711,7 @@ export class Gallery {
         this._glass ??= new THREE.MeshStandardMaterial({
             color: 0x000000, roughness: 0.03, metalness: 0,
             envMap: this.scene.environment, envMapIntensity: 3.5 * cfg.glass / 100,
-            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false
         })
         return this._glass
     }
@@ -710,12 +726,12 @@ export class Gallery {
         reflective.forEach((material) => { material.visible = false })
         // źródła światła (świetliki, soczewki reflektorów) w odbiciach przygaszone —
         // w samej sali świecą jak dotąd
-        materials.lightPanel.color.setScalar(REFLECTED_LIGHT)
+        materials.lightPanel.color.multiplyScalar(REFLECTED_LIGHT)
         materials.lens.color.multiplyScalar(REFLECTED_LIGHT)
         this.scene.add(cubeCamera)
         cubeCamera.update(this.renderer, this.scene)
         this.scene.remove(cubeCamera)
-        materials.lightPanel.color.setScalar(1)
+        materials.lightPanel.color.multiplyScalar(1 / REFLECTED_LIGHT)
         materials.lens.color.multiplyScalar(1 / REFLECTED_LIGHT)
         reflective.forEach((material) => { material.visible = true })
         const pmrem = new THREE.PMREMGenerator(this.renderer)
