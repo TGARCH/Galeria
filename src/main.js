@@ -75,9 +75,11 @@ if (shadowTest.ao) {
     composer.setSize(window.innerWidth, window.innerHeight)
     composer.addPass(new RenderPass(scene, camera))
     const ao = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight)
-    ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 2.5, scale: 1.25, samples: 16 })
-    ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 })
-    ao.blendIntensity = 0.85
+    // jaśniej i szerzej: duży promień (ok. 2,2 m) i łagodny spadek z odległością,
+    // mocne rozmycie — przyciemnienie rozlewa się daleko od narożników zamiast być wąską krechą
+    ao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.0, thickness: 4, distanceFallOff: 1, scale: 0.9, samples: 16 })
+    ao.updatePdMaterial({ lumaPhi: 8, depthPhi: 1.5, normalPhi: 2, radius: 12, rings: 3, samples: 16 })
+    ao.blendIntensity = 0.5
     composer.addPass(ao)
     composer.addPass(new OutputPass())
 }
