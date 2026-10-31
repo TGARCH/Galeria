@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { galleryConfig as cfg, shadowTest } from './config.js'
+import { galleryConfig as cfg, shadowTest, glassTest } from './config.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
@@ -636,6 +636,15 @@ export class Gallery {
             art.position.z = matZ + 0.006
             holder.add(art)
 
+            if (glassTest) {
+                // szkło tuż za czołem ramy, w świetle passe-partout: czarne + mieszanie addytywne,
+                // więc widać wyłącznie odbicie — słabe na wprost, silne pod kątem (Fresnel)
+                const glass = new THREE.Mesh(unitPlane, this.glassMaterial())
+                glass.scale.set(size.outerW - 2 * f.profile + 0.004, size.outerH - 2 * f.profile + 0.004, 1)
+                glass.position.z = front - 0.006
+                holder.add(glass)
+            }
+
             const label = new THREE.Mesh(unitPlane, materials.placeholder)
             label.scale.set(0.24, 0.12, 1)
             label.position.set(size.outerW / 2 + 0.24, -0.32, 0.006)
@@ -675,6 +684,17 @@ export class Gallery {
         this.bounds = { minX: -1, maxX: length + 1, minZ: -maxHalf - 1, maxZ: maxHalf + 1 }
         this.scene.add(group)
         this.lastStreamCheck = -1
+    }
+
+    // wspólny materiał szkła; odbija otoczenie sceny z własną intensywnością
+    // (scena przyciemnia otoczenie dla ścian — szkło potrzebuje go w pełni)
+    glassMaterial() {
+        this._glass ??= new THREE.MeshStandardMaterial({
+            color: 0x000000, roughness: 0.05, metalness: 0,
+            envMap: this.scene.environment, envMapIntensity: 1.8,
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+        })
+        return this._glass
     }
 
     addSpots(group, spots) {

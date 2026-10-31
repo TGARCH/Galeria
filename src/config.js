@@ -29,3 +29,6 @@ export const galleryConfig = {
 export const shadowTest = {
     decals: new URLSearchParams(window.location.search).has('cienie')
 }
+
+// Test szkła (?szklo): tafla szkła w ramie, odbijająca światło coraz mocniej pod kątem
+export const glassTest = new URLSearchParams(window.location.search).has('szklo')
