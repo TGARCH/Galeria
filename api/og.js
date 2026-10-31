@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
         // obrazy przez nasz serwer obrazów (właściwa orientacja, cache CDN)
         const images = await Promise.all(picks.map(async (file) => {
-            const response = await fetch(`${origin}/api/image?id=${file.id}&w=1200&v=2&r=${encodeURIComponent(file.version || '')}`)
+            const response = await fetch(`${origin}/api/image?id=${file.id}&w=1200&v=3&r=${encodeURIComponent(file.version || '')}`)
             if (!response.ok) return null
             return Buffer.from(await response.arrayBuffer())
         }))

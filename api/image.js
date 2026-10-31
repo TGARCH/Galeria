@@ -32,6 +32,16 @@ const orient = async (buffer, file) => {
     return null
 }
 
+// Proporcje bieżącej wersji pliku według Dysku (po obrocie). Miniatury Google po edycji
+// pliku (np. przycięciu) bywają jeszcze przez jakiś czas stare — mają wtedy inne proporcje.
+const expectedRatio = (file) => {
+    const w = file.imageMediaMetadata?.width, h = file.imageMediaMetadata?.height
+    if (!w || !h) return null
+    return (file.imageMediaMetadata?.rotation || 0) % 2 === 1 ? h / w : w / h
+}
+const ratioMatches = (ratio, expected) =>
+    Math.min(Math.abs(ratio / expected - 1), Math.abs(ratio * expected - 1)) < 0.02
+
 // Serwuje obraz z Dysku pod adresem tej samej domeny (wymagane przez WebGL — CORS),
 // w zadanej szerokości. Podaje wyłącznie pliki z folderu galerii.
 export default async function handler(req, res) {
@@ -71,6 +81,25 @@ export default async function handler(req, res) {
             if (rotated) { buffer = rotated; type = 'image/jpeg' }
         } catch (error) {
             console.warn('Nie udało się sprawdzić orientacji', id, error.message)
+        }
+        // nieaktualna miniatura (inne proporcje niż bieżący plik) → oryginał z Dysku, zmniejszony tutaj;
+        // inaczej podgląd pokazywałby np. pracę sprzed przycięcia, a potem podmieniał ją na oczach
+        try {
+            const expected = expectedRatio(file)
+            const served = await sharp(buffer, { failOn: 'none' }).metadata()
+            if (expected && served.width && served.height && !ratioMatches(served.width / served.height, expected)) {
+                const original = await attempt(mediaUrl(id))
+                if (original) {
+                    let source = Buffer.from(await original.arrayBuffer())
+                    const rotated = await orient(source, file)
+                    if (rotated) source = rotated
+                    buffer = await sharp(source, { failOn: 'none' }).resize({ width, withoutEnlargement: true }).jpeg({ quality: 88 }).toBuffer()
+                    type = 'image/jpeg'
+                    console.warn('Nieaktualna miniatura Google — użyto oryginału', id)
+                }
+            }
+        } catch (error) {
+            console.warn('Nie udało się sprawdzić aktualności miniatury', id, error.message)
         }
         // powiększenie (?c=1): stopka z prawami autorskimi + informacja w metadanych pliku
         if (req.query.c === '1') {
