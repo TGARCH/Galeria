@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { galleryConfig as cfg } from './config.js'
+import { galleryConfig as cfg, shadowTest } from './config.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
@@ -94,8 +94,29 @@ const makeGlowTexture = () => {
     return new THREE.CanvasTexture(canvas)
 }
 
+// Miękki cień: ciemny prostokąt zajmujący środkowe 80% tekstury, rozmyty ku krawędziom
+// (test cieni, ?cienie). Rozciągany na wymiar rzucającego cień elementu.
+const SHADOW_CORE = 0.8
+const makeSoftShadowTexture = () => {
+    const size = 512
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = size
+    const ctx = canvas.getContext('2d')
+    const pad = size * (1 - SHADOW_CORE) / 2
+    // rozmycie przez cień kształtu narysowanego poza płótnem — działa w każdej przeglądarce
+    ctx.shadowColor = 'rgba(0,0,0,1)'
+    ctx.shadowBlur = pad * 0.9
+    ctx.shadowOffsetX = size * 2
+    ctx.fillStyle = '#000'
+    ctx.fillRect(pad - size * 2, pad, size - 2 * pad, size - 2 * pad)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
+}
+
 const floorTexture = makeFloorTexture()
 const glowTexture = makeGlowTexture()
+const softShadowTexture = shadowTest.decals ? makeSoftShadowTexture() : null
 
 const materials = {
     wall: new THREE.MeshStandardMaterial({ color: 0xcfcdc9, roughness: 0.94 }),
@@ -111,7 +132,10 @@ const materials = {
     lens: new THREE.MeshBasicMaterial({ color: 0xfff4e2, toneMapped: false }),
     track: new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 0.4, metalness: 0.1 }),
     glow: new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }),
-    placeholder: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 1 })
+    placeholder: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 1 }),
+    // test cieni (?cienie)
+    frameShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false }),
+    floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
 }
 
 // ————————————————————————————————————————————————
@@ -499,6 +523,14 @@ export class Gallery {
             addWall(x0 + W / 2, half, W + T, T)                           // południe
             for (const part of partitions) {
                 addWall(part.x, part.z, part.sx, part.sz, P.height)
+                if (shadowTest.decals) {
+                    // rozproszony cień ścianki na podłodze — światło ze świetlików w suficie
+                    const shade = new THREE.Mesh(unitPlane, materials.floorShadow)
+                    shade.rotation.x = -Math.PI / 2
+                    shade.scale.set((part.sx + 1.1) / SHADOW_CORE, (part.sz + 1.1) / SHADOW_CORE, 1)
+                    shade.position.set(part.x, 0.004, part.z)
+                    group.add(shade)
+                }
                 addBox(part.x, P.height + 0.01, part.z, part.sx + 0.03, 0.02, part.sz + 0.03, materials.baseboard, false)   // nakrywa ścianki
             }
             // świetliki: rzędy co ok. 5 m
@@ -558,6 +590,13 @@ export class Gallery {
             group.add(holder)
 
             const f = cfg.frame
+            if (shadowTest.decals) {
+                // cień ramy od reflektora nad i przed obrazem: pada na ścianę nieco niżej
+                const shade = new THREE.Mesh(unitPlane, materials.frameShadow)
+                shade.scale.set((size.outerW + 0.03) / SHADOW_CORE, (size.outerH + 0.03) / SHADOW_CORE, 1)
+                shade.position.set(0, -0.075, 0.0015)
+                holder.add(shade)
+            }
             const glow = new THREE.Mesh(unitPlane, materials.glow)
             glow.scale.set(size.outerW * 1.9 + 0.6, size.outerH * 1.75 + 0.6, 1)
             glow.position.set(0, 0.12, 0.002)

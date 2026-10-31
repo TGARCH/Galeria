@@ -23,3 +23,13 @@ export const galleryConfig = {
     // Jak często sprawdzać, czy na Dysku pojawiły się nowe pliki [s]
     refreshInterval: 90
 }
+
+// Test cieni (tylko z parametrem w adresie, produkcja bez zmian):
+//   ?cienie        — oba rodzaje
+//   ?cienie=ao     — tylko cienie kontaktowe w narożnikach i u podstaw ścian (ambient occlusion)
+//   ?cienie=plamy  — tylko miękkie cienie ram od reflektorów i ścianek na podłodze
+const shadowParam = new URLSearchParams(window.location.search).get('cienie')
+export const shadowTest = {
+    ao: shadowParam !== null && shadowParam !== 'plamy',
+    decals: shadowParam !== null && shadowParam !== 'ao'
+}
