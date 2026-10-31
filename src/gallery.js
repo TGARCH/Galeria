@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { galleryConfig as cfg, shadowTest, glassTest } from './config.js'
+import { galleryConfig as cfg, shadowTest, glassTest, glassStrength } from './config.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
@@ -692,7 +692,7 @@ export class Gallery {
     glassMaterial() {
         this._glass ??= new THREE.MeshStandardMaterial({
             color: 0x000000, roughness: 0.03, metalness: 0,
-            envMap: this.scene.environment, envMapIntensity: 1.4,
+            envMap: this.scene.environment, envMapIntensity: 3.5 * glassStrength / 100,
             transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
         })
         return this._glass

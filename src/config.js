@@ -32,4 +32,7 @@ export const shadowTest = {
 
 // Test szkła (?szklo lub ?szkło): tafla szkła w ramie, odbijająca światło coraz mocniej pod kątem
 const glassParams = new URLSearchParams(window.location.search)
-export const glassTest = glassParams.has('szklo') || glassParams.has('szkło')
+const glassValue = glassParams.get('szklo') ?? glassParams.get('szkło')
+export const glassTest = glassValue !== null
+// siła odbicia w % (100% = najmocniejsze testowane); ?szkło=30 itp., domyślnie 20%
+export const glassStrength = glassTest && glassValue !== '' && !Number.isNaN(Number(glassValue)) ? Number(glassValue) : 20
