@@ -134,8 +134,8 @@ const materials = {
     glow: new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }),
     placeholder: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 1 }),
     // test cieni (?cienie)
-    frameShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false }),
-    floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    frameShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }),
+    floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
 }
 
 // ————————————————————————————————————————————————
