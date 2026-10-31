@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { galleryConfig as cfg, shadowTest, glassTest, glassStrength } from './config.js'
+import { galleryConfig as cfg, shadowTest, glassTest, glassStrength, floorReflectTest, floorReflectStrength } from './config.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
@@ -560,6 +560,15 @@ export class Gallery {
         floorTexture.repeat.set(length / FLOOR_TILE, 2 * maxHalf / FLOOR_TILE)
         group.add(floor)
 
+        if (floorReflectTest) {
+            // warstwa samego odbicia nad deskami (czarna, addytywna) — kolor podłogi bez zmian
+            const sheen = new THREE.Mesh(unitPlane, this.floorSheenMaterial())
+            sheen.rotation.x = -Math.PI / 2
+            sheen.scale.copy(floor.scale)
+            sheen.position.set(floor.position.x, 0.002, floor.position.z)
+            group.add(sheen)
+        }
+
         const ceiling = new THREE.Mesh(unitPlane, materials.ceiling)
         ceiling.rotation.x = Math.PI / 2
         ceiling.scale.set(length, 2 * maxHalf, 1)
@@ -684,7 +693,7 @@ export class Gallery {
 
         this.bounds = { minX: -1, maxX: length + 1, minZ: -maxHalf - 1, maxZ: maxHalf + 1 }
         this.scene.add(group)
-        if (glassTest) this.captureGlassReflections()
+        if (glassTest || floorReflectTest) this.captureGlassReflections()
         this.lastStreamCheck = -1
     }
 
@@ -698,25 +707,36 @@ export class Gallery {
         return this._glass
     }
 
+    // odbicie w podłodze: gładka warstwa (mało rozproszone odbicie), słaba
+    floorSheenMaterial() {
+        this._floorSheen ??= new THREE.MeshStandardMaterial({
+            color: 0x000000, roughness: 0.12, metalness: 0,
+            envMap: this.scene.environment, envMapIntensity: 3.5 * floorReflectStrength / 100,
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+            polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+        })
+        return this._floorSheen
+    }
+
     // Odbicia w szkle: jednorazowe „zdjęcie dookoła” wnętrza galerii (środek pierwszej
     // sali, nieco nad wzrokiem) — w szybach widać jasne świetliki sufitu i ściany sali.
     captureGlassReflections() {
-        const glass = this.glassMaterial()
+        const reflective = [glassTest && this.glassMaterial(), floorReflectTest && this.floorSheenMaterial()].filter(Boolean)
         const target = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType })
         const cubeCamera = new THREE.CubeCamera(0.1, 80, target)
         cubeCamera.position.set(W / 2, 2.0, 0)
-        glass.visible = false
+        reflective.forEach((material) => { material.visible = false })
         this.scene.add(cubeCamera)
         cubeCamera.update(this.renderer, this.scene)
         this.scene.remove(cubeCamera)
-        glass.visible = true
+        reflective.forEach((material) => { material.visible = true })
         const pmrem = new THREE.PMREMGenerator(this.renderer)
         const env = pmrem.fromCubemap(target.texture).texture
         pmrem.dispose()
         target.dispose()
-        if (glass.envMap && glass.envMap !== this.scene.environment) glass.envMap.dispose()
-        glass.envMap = env
-        glass.needsUpdate = true
+        const old = reflective[0].envMap
+        if (old && old !== this.scene.environment) old.dispose()
+        reflective.forEach((material) => { material.envMap = env; material.needsUpdate = true })
     }
 
     addSpots(group, spots) {

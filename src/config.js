@@ -36,3 +36,9 @@ const glassValue = glassParams.get('szklo') ?? glassParams.get('szkło')
 export const glassTest = glassValue !== null
 // siła odbicia w % (100% = najmocniejsze testowane); ?szkło=30 itp., domyślnie 10%
 export const glassStrength = glassTest && glassValue !== '' && !Number.isNaN(Number(glassValue)) ? Number(glassValue) : 10
+
+// Test odbić w podłodze (?podloga lub ?podłoga): siła w % w tej samej skali co szkło,
+// domyślnie 5%; ostre, mało rozproszone odbicie wnętrza galerii w deskach
+const floorValue = glassParams.get('podloga') ?? glassParams.get('podłoga')
+export const floorReflectTest = floorValue !== null
+export const floorReflectStrength = floorReflectTest && floorValue !== '' && !Number.isNaN(Number(floorValue)) ? Number(floorValue) : 5
