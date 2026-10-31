@@ -135,7 +135,8 @@ const glowTexture = makeGlowTexture()
 const softShadowTexture = shadowTest.decals ? makeSoftShadowTexture() : null
 const contactTexture = shadowTest.ao ? makeContactTexture() : null
 const CONTACT_FLOOR = 1.1   // zasięg cienia kontaktowego na podłodze [m]
-const CONTACT_WALL = 0.8    // i na ścianie [m]
+const CONTACT_WALL = 1.0    // i na ścianie, nad listwą [m]
+const BASEBOARD_H = 0.11, BASEBOARD_OUT = 0.025   // listwa: wysokość i wysięg (z zapasem)
 
 const materials = {
     wall: new THREE.MeshStandardMaterial({ color: 0xcfcdc9, roughness: 0.94 }),
@@ -155,8 +156,8 @@ const materials = {
     // test cieni (?cienie)
     frameShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false }),
     floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.18, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
-    contactFloor: new THREE.MeshBasicMaterial({ map: contactTexture, color: 0x000000, transparent: true, opacity: 0.2, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
-    contactWall: new THREE.MeshBasicMaterial({ map: contactTexture, color: 0x000000, transparent: true, opacity: 0.14, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })
+    contactFloor: new THREE.MeshBasicMaterial({ map: contactTexture, color: 0x000000, transparent: true, opacity: 0.2, depthWrite: false }),
+    contactWall: new THREE.MeshBasicMaterial({ map: contactTexture, color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false })
 }
 
 // ————————————————————————————————————————————————
@@ -526,13 +527,16 @@ export class Gallery {
                 // obrót w płaszczyźnie tak, by ciemna krawędź tekstury leżała przy ścianie
                 const spin = alongX ? (side > 0 ? 0 : Math.PI) : (side > 0 ? Math.PI / 2 : -Math.PI / 2)
                 floor.rotation.set(-Math.PI / 2, 0, spin)
+                // zaczyna się przed listwą, nie pod nią
+                const fromFloor = half + BASEBOARD_OUT + CONTACT_FLOOR / 2
                 floor.scale.set(length, CONTACT_FLOOR, 1)
-                floor.position.set(x + nx * (half + CONTACT_FLOOR / 2), 0.003, z + nz * (half + CONTACT_FLOOR / 2))
+                floor.position.set(x + nx * fromFloor, 0.004, z + nz * fromFloor)
                 group.add(floor)
                 const wall = new THREE.Mesh(unitPlane, materials.contactWall)
                 wall.rotation.set(0, Math.atan2(nx, nz), Math.PI)
+                // zaczyna się tuż nad listwą, 5 mm od lica — bez przesuwania głębokości
                 wall.scale.set(length, CONTACT_WALL, 1)
-                wall.position.set(x + nx * (half + 0.003), CONTACT_WALL / 2, z + nz * (half + 0.003))
+                wall.position.set(x + nx * (half + 0.005), BASEBOARD_H + CONTACT_WALL / 2, z + nz * (half + 0.005))
                 group.add(wall)
             }
         }
