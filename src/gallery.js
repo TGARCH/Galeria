@@ -421,6 +421,7 @@ const nextRoomCanvas = (title) => {
 export class Gallery {
     constructor(scene, renderer) {
         this.scene = scene
+        this.renderer = renderer
         this.maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
         this.group = null
         this.artworks = []
@@ -683,18 +684,39 @@ export class Gallery {
 
         this.bounds = { minX: -1, maxX: length + 1, minZ: -maxHalf - 1, maxZ: maxHalf + 1 }
         this.scene.add(group)
+        if (glassTest) this.captureGlassReflections()
         this.lastStreamCheck = -1
     }
 
-    // wspólny materiał szkła; odbija otoczenie sceny z własną intensywnością
-    // (scena przyciemnia otoczenie dla ścian — szkło potrzebuje go w pełni)
+    // wspólny materiał szkła: czarny + mieszanie addytywne, więc widać tylko odbicie
     glassMaterial() {
         this._glass ??= new THREE.MeshStandardMaterial({
-            color: 0x000000, roughness: 0.05, metalness: 0,
-            envMap: this.scene.environment, envMapIntensity: 1.8,
+            color: 0x000000, roughness: 0.03, metalness: 0,
+            envMap: this.scene.environment, envMapIntensity: 3.5,
             transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
         })
         return this._glass
+    }
+
+    // Odbicia w szkle: jednorazowe „zdjęcie dookoła” wnętrza galerii (środek pierwszej
+    // sali, nieco nad wzrokiem) — w szybach widać jasne świetliki sufitu i ściany sali.
+    captureGlassReflections() {
+        const glass = this.glassMaterial()
+        const target = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType })
+        const cubeCamera = new THREE.CubeCamera(0.1, 80, target)
+        cubeCamera.position.set(W / 2, 2.0, 0)
+        glass.visible = false
+        this.scene.add(cubeCamera)
+        cubeCamera.update(this.renderer, this.scene)
+        this.scene.remove(cubeCamera)
+        glass.visible = true
+        const pmrem = new THREE.PMREMGenerator(this.renderer)
+        const env = pmrem.fromCubemap(target.texture).texture
+        pmrem.dispose()
+        target.dispose()
+        if (glass.envMap && glass.envMap !== this.scene.environment) glass.envMap.dispose()
+        glass.envMap = env
+        glass.needsUpdate = true
     }
 
     addSpots(group, spots) {
