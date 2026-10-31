@@ -707,11 +707,15 @@ export class Gallery {
         return this._glass
     }
 
-    // odbicie w podłodze: gładka warstwa (mało rozproszone odbicie), słaba
+    // odbicie w podłodze: gładka warstwa (mało rozproszone odbicie) o STAŁEJ sile
+    // niezależnej od kąta — bez Fresnela, który pod małym kątem w głębi sali dawał
+    // niemal lustro i wybielał podłogę. Odbicie = floorReflectStrength % otoczenia
+    // (specularColor ≫ 1 → odbicie na wprost i pod kątem równe specularIntensity).
     floorSheenMaterial() {
-        this._floorSheen ??= new THREE.MeshStandardMaterial({
+        this._floorSheen ??= new THREE.MeshPhysicalMaterial({
             color: 0x000000, roughness: 0.12, metalness: 0,
-            envMap: this.scene.environment, envMapIntensity: 3.5 * floorReflectStrength / 100,
+            specularIntensity: floorReflectStrength / 100, specularColor: new THREE.Color(30, 30, 30),
+            envMap: this.scene.environment, envMapIntensity: 1,
             transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
             polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
         })
