@@ -97,6 +97,8 @@ const makeGlowTexture = () => {
 // Miękki cień: ciemny prostokąt zajmujący środkowe 80% tekstury, rozmyty ku krawędziom
 // (test cieni, ?cienie). Rozciągany na wymiar rzucającego cień elementu.
 const SHADOW_CORE = 0.8
+// jasność źródeł światła w odbiciach (szkło, podłoga) względem rzeczywistej
+const REFLECTED_LIGHT = 0.4
 const makeSoftShadowTexture = () => {
     const size = 512
     const canvas = document.createElement('canvas')
@@ -730,9 +732,15 @@ export class Gallery {
         const cubeCamera = new THREE.CubeCamera(0.1, 80, target)
         cubeCamera.position.set(W / 2, 2.0, 0)
         reflective.forEach((material) => { material.visible = false })
+        // źródła światła (świetliki, soczewki reflektorów) w odbiciach przygaszone —
+        // w samej sali świecą jak dotąd
+        materials.lightPanel.color.setScalar(REFLECTED_LIGHT)
+        materials.lens.color.multiplyScalar(REFLECTED_LIGHT)
         this.scene.add(cubeCamera)
         cubeCamera.update(this.renderer, this.scene)
         this.scene.remove(cubeCamera)
+        materials.lightPanel.color.setScalar(1)
+        materials.lens.color.multiplyScalar(1 / REFLECTED_LIGHT)
         reflective.forEach((material) => { material.visible = true })
         const pmrem = new THREE.PMREMGenerator(this.renderer)
         const env = pmrem.fromCubemap(target.texture).texture
