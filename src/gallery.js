@@ -162,6 +162,7 @@ if (moodTest) {
 // Uchwyt (adapter na szynie + trzpień) obraca się tylko w poziomie,
 // głowica dodatkowo pochyla się w stronę obrazu. Oś głowicy = +Z.
 
+const LABEL_NEAR = 30, LABEL_FAR = 45   // tabliczki: przygotowanie / zwolnienie [m]
 const SPOT_DROP = 0.17   // odległość przegubu od sufitu [m]
 
 const spotMountGeometry = (() => {
@@ -814,9 +815,13 @@ export class Gallery {
         this.lastStreamCheck = elapsed
         const now = performance.now()
         const wanted = []
+        let newLabels = 0
         for (const art of this.artworks) {
             const distance = art.world.distanceTo(cameraPosition)
-            if (distance < 8 && !art.labelReady) this.makeLabel(art)
+            // tabliczki przygotowywane z wyprzedzeniem (z daleka są ledwie widoczne), po kilka
+            // na raz, żeby nie zacinać; dalekie zwalniane
+            if (distance < LABEL_NEAR && !art.labelReady && newLabels < 4) { this.makeLabel(art); newLabels++ }
+            else if (distance > LABEL_FAR && art.labelReady && !this.pinned.has(art)) this.dropLabel(art)
             const target = distance < 9 ? 2 : distance < 30 ? 1 : 0
             if (art.level > 0 && distance > 40 && !this.pinned.has(art)) this.unload(art)
             if (!art.loadingLevel && art.level < target && now >= art.retryAt) wanted.push([target === 2 ? distance - 100 : distance, art, target])
@@ -902,8 +907,17 @@ export class Gallery {
 
     makeLabel(art) {
         art.labelReady = true
-        art.label.material = new THREE.MeshBasicMaterial({ map: labelCanvas(art.drawing, art.number) })
+        // oświetlana jak ściana — w półmroku nie świeci
+        art.label.material = new THREE.MeshStandardMaterial({ map: labelCanvas(art.drawing, art.number), roughness: 0.9 })
         art.label.visible = true
+    }
+
+    dropLabel(art) {
+        art.label.material.map?.dispose()
+        art.label.material.dispose()
+        art.label.material = materials.placeholder
+        art.label.visible = false
+        art.labelReady = false
     }
 
     roomAt(x) {
