@@ -140,22 +140,6 @@ const materials = {
     floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
 }
 
-// Kameralny nastrój (cfg.mood): ciepłe reflektory ok. 2800 K, wyraźniejsze plamy światła,
-// ściany nieco ciemniejsze, podłoga orzechowa (ten sam rysunek desek, ciemniejszy i cieplejszy
-// ton), świetliki przygaszone
-const WARM_SPOT = 0xffb877        // barwa światła ok. 2800 K
-if (cfg.mood) {
-    materials.wall.color.set(0xb8b4ae)
-    materials.baseboard.color.set(0x9d9993)
-    materials.floor.color.set(0x9a755c)
-    materials.floor.envMapIntensity = 0.6
-    materials.lightPanel.color.setScalar(0.55)
-    materials.lens.color.set(0xffd2a0)
-    materials.glow.color.set(WARM_SPOT)
-    materials.glow.opacity = 0.2
-    materials.mat.emissive.set(0xffdcb0)
-}
-
 // ————————————————————————————————————————————————
 // Reflektor szynowy (low-poly, rysowany instancjami: kilka wywołań na całą galerię)
 // ————————————————————————————————————————————————
@@ -332,6 +316,10 @@ const frameSize = (drawing, span) => {
     return fix < 1 ? measure(scale * fix) : size
 }
 
+// Kolory napisów (panel „Wygląd”): czarne — tytuły, szare — numery, daty, podpisy
+const textColors = { dark: '#1f1d1a', gray: '#9a948a' }
+const midGray = () => '#' + new THREE.Color(textColors.dark).lerp(new THREE.Color(textColors.gray), 0.55).getHexString()
+
 const labelCanvas = (drawing, number) => {
     const canvas = document.createElement('canvas')
     canvas.width = 512
@@ -339,10 +327,10 @@ const labelCanvas = (drawing, number) => {
     const ctx = canvas.getContext('2d')
     ctx.fillStyle = '#fbfaf7'
     ctx.fillRect(0, 0, 512, 256)
-    ctx.fillStyle = '#9a948a'
+    ctx.fillStyle = textColors.gray
     ctx.font = '500 30px "Inter", "Helvetica Neue", Arial, sans-serif'
     ctx.fillText(String(number).padStart(2, '0'), 36, 66)
-    ctx.fillStyle = '#1f1d1a'
+    ctx.fillStyle = textColors.dark
     ctx.font = '500 44px "Cormorant Garamond", Georgia, serif'
     // zawijanie tytułu do dwóch linii
     if (!drawing.title) ctx.font = 'italic 500 44px "Cormorant Garamond", Georgia, serif'
@@ -356,7 +344,7 @@ const labelCanvas = (drawing, number) => {
         } else lines[lines.length - 1] = test
     }
     lines.forEach((line, i) => ctx.fillText(line, 36, 124 + i * 50))
-    ctx.fillStyle = '#9a948a'
+    ctx.fillStyle = textColors.gray
     ctx.font = '400 26px "Inter", "Helvetica Neue", Arial, sans-serif'
     const date = formatDate(drawing.date)
     if (date) ctx.fillText(date, 36, 226)
@@ -373,16 +361,16 @@ const entranceCanvas = (count) => {
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, 2048, 720)
     ctx.textAlign = 'center'
-    ctx.fillStyle = '#1f1d1a'
+    ctx.fillStyle = textColors.dark
     ctx.font = '400 230px "Cormorant Garamond", Georgia, serif'
     ctx.fillText(cfg.title, 1024, 300)
-    ctx.fillStyle = '#6f6a62'
+    ctx.fillStyle = midGray()
     ctx.font = '400 64px "Inter", "Helvetica Neue", Arial, sans-serif'
     ctx.letterSpacing = '22px'
     ctx.fillText(cfg.subtitle.toUpperCase(), 1024, 460)
     ctx.letterSpacing = '6px'
     ctx.font = '400 44px "Inter", "Helvetica Neue", Arial, sans-serif'
-    ctx.fillStyle = '#9a948a'
+    ctx.fillStyle = textColors.gray
     ctx.fillText(count === 1 ? '1 praca' : `${count} ${count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'prace' : 'prac'}`, 1024, 600)
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
@@ -400,10 +388,10 @@ const roomNameCanvas = (title, count) => {
     canvas.height = 560
     const ctx = canvas.getContext('2d')
     ctx.textAlign = 'center'
-    ctx.fillStyle = '#1f1d1a'
+    ctx.fillStyle = textColors.dark
     ctx.font = '400 190px "Cormorant Garamond", Georgia, serif'
     ctx.fillText(title, 1024, 250, 1980)
-    ctx.fillStyle = '#8c867c'
+    ctx.fillStyle = textColors.gray
     ctx.font = '400 54px "Inter", "Helvetica Neue", Arial, sans-serif'
     ctx.letterSpacing = '14px'
     ctx.fillText(plural(count).toUpperCase(), 1024, 420)
@@ -419,12 +407,12 @@ const nextRoomCanvas = (title) => {
     canvas.width = 1024
     canvas.height = 300
     const ctx = canvas.getContext('2d')
-    ctx.fillStyle = '#8c867c'
+    ctx.fillStyle = textColors.gray
     ctx.font = '500 46px "Inter", "Helvetica Neue", Arial, sans-serif'
     ctx.letterSpacing = '10px'
     ctx.fillText('NASTĘPNA SALA', 24, 86)
     ctx.letterSpacing = '0px'
-    ctx.fillStyle = '#1f1d1a'
+    ctx.fillStyle = textColors.dark
     ctx.font = '500 104px "Cormorant Garamond", Georgia, serif'
     ctx.fillText(`${title} ↑`, 24, 222, 980)
     const texture = new THREE.CanvasTexture(canvas)
@@ -456,6 +444,7 @@ export class Gallery {
 
     // rooms: [{ id, title, drawings }] — jedna sala na podfolder Dysku
     build(rooms) {
+        this.lastRooms = rooms
         const previous = new Map(this.artworks.map((art) => [art.drawing.id, art]))
         const reused = new Set()
         if (this.group) this.scene.remove(this.group)
@@ -514,7 +503,7 @@ export class Gallery {
         // ściana wzdłuż osi Z od za do zb
         const wallAlongZ = (x, za, zb, height, y0) => addWall(x, (za + zb) / 2, T, zb - za, height, y0)
         const addText = (texture, x, y, z, rotY, width, aspect) => {
-            const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false })
+            const material = new THREE.MeshStandardMaterial({ map: texture, transparent: true, depthWrite: false, roughness: 1 })   // oświetlane jak ściana
             this.titledMaterials.push(material)
             const text = new THREE.Mesh(unitPlane, material)
             text.scale.set(width, width * aspect, 1)
@@ -587,7 +576,7 @@ export class Gallery {
 
         // napis przy wejściu
         const total = rooms.reduce((sum, room) => sum + room.drawings.length, 0)
-        const entranceMaterial = new THREE.MeshBasicMaterial({ map: entranceCanvas(total), transparent: true })
+        const entranceMaterial = new THREE.MeshStandardMaterial({ map: entranceCanvas(total), transparent: true, roughness: 1 })
         this.titledMaterials.push(entranceMaterial)
         const entrance = new THREE.Mesh(unitPlane, entranceMaterial)
         entrance.scale.set(4.0, 4.0 * 720 / 2048, 1)
@@ -707,6 +696,41 @@ export class Gallery {
         this.lastStreamCheck = -1
     }
 
+    // Wygląd z panelu „Wygląd” (src/appearance.js). Zwraca true, gdy zmieniły się kolory
+    // napisów — wtedy trzeba przebudować galerię (napisy są rysowane na teksturach).
+    setAppearance(a) {
+        const set = (material, { color, gloss }) => {
+            material.color.set(color)
+            material.roughness = Math.min(1, Math.max(0.02, 1 - gloss / 100))
+        }
+        set(materials.wall, a.materials.walls)
+        set(materials.floor, a.materials.floor)
+        set(materials.baseboard, a.materials.baseboards)
+        set(materials.ceiling, a.materials.ceiling)
+        set(materials.frame, a.materials.frames)
+        const { spots, skylights } = a.light
+        materials.lightPanel.color.setScalar(skylights.intensity / 100)
+        const warm = new THREE.Color(spots.color)
+        materials.glow.color.copy(warm)
+        materials.glow.opacity = 0.2 * spots.intensity / 100
+        materials.lens.color.set(0xffffff).lerp(warm, 0.5)
+        materials.mat.emissive.set(0xffffff).lerp(warm, 0.45)
+        materials.frameShadow.opacity = 0.3 * a.effects.shadows / 100
+        materials.floorShadow.opacity = 0.22 * a.effects.shadows / 100
+        if (cfg.glass > 0) {
+            const glass = this.glassMaterial()
+            glass.envMapIntensity = 3.5 * a.effects.glass / 100
+            glass.visible = a.effects.glass > 0
+        }
+        // odbicia w szkle odświeżane chwilę po ostatniej zmianie
+        clearTimeout(this._recapture)
+        if (cfg.glass > 0 && this.group) this._recapture = setTimeout(() => this.captureGlassReflections(), 400)
+        const textChanged = textColors.dark !== a.text.dark || textColors.gray !== a.text.gray
+        textColors.dark = a.text.dark
+        textColors.gray = a.text.gray
+        return textChanged
+    }
+
     // wspólny materiał szkła: czarny + mieszanie addytywne, więc widać tylko odbicie
     glassMaterial() {
         this._glass ??= new THREE.MeshStandardMaterial({
@@ -724,6 +748,7 @@ export class Gallery {
         const target = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType })
         const cubeCamera = new THREE.CubeCamera(0.1, 80, target)
         cubeCamera.position.set(W / 2, 2.0, 0)
+        const wasVisible = reflective.map((material) => material.visible)
         reflective.forEach((material) => { material.visible = false })
         // źródła światła (świetliki, soczewki reflektorów) w odbiciach przygaszone —
         // w samej sali świecą jak dotąd
@@ -734,7 +759,7 @@ export class Gallery {
         this.scene.remove(cubeCamera)
         materials.lightPanel.color.multiplyScalar(1 / REFLECTED_LIGHT)
         materials.lens.color.multiplyScalar(1 / REFLECTED_LIGHT)
-        reflective.forEach((material) => { material.visible = true })
+        reflective.forEach((material, i) => { material.visible = wasVisible[i] })
         const pmrem = new THREE.PMREMGenerator(this.renderer)
         const env = pmrem.fromCubemap(target.texture).texture
         pmrem.dispose()

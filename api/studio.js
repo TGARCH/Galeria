@@ -1,24 +1,8 @@
-import crypto from 'node:crypto'
+import { COOKIE, DAYS, enabled, sign, safeEqual, hasAccess } from './_auth.js'
 
-// Tryb „Studio” (nagrywanie rolek) — tylko dla właściciela galerii.
+// Tryb „Studio” (nagrywanie rolek, panel wyglądu) — tylko dla właściciela galerii.
 // Wejście: adres z ?studio=KLUCZ (KLUCZ = zmienna STUDIO_KEY w Vercel). Serwer wydaje
 // podpisane ciasteczko na 90 dni; zmiana STUDIO_KEY unieważnia wszystkie dostępy.
-
-const COOKIE = 'gstudio'
-const DAYS = 90
-const enabled = () => Boolean(process.env.STUDIO_KEY)
-const sign = (exp) => crypto.createHmac('sha256', `${process.env.GOOGLE_API_KEY || ''}|${process.env.STUDIO_KEY}`).update(`studio:${exp}`).digest('base64url')
-const safeEqual = (a, b) => {
-    const x = Buffer.from(String(a)), y = Buffer.from(String(b))
-    return x.length === y.length && crypto.timingSafeEqual(x, y)
-}
-const readCookie = (req) => (req.headers.cookie || '').split(';').map((p) => p.trim())
-    .find((p) => p.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1)
-const hasAccess = (req) => {
-    if (!enabled()) return false
-    const [exp, sig] = (readCookie(req) || '').split('.')
-    return Boolean(exp && sig && Number(exp) > Date.now() && safeEqual(sig, sign(exp)))
-}
 
 export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store')

@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { inject } from '@vercel/analytics'
 import { galleryConfig as cfg } from './config.js'
+import { defaultAppearance, fetchAppearance } from './appearance.js'
+import { initAppearancePanel } from './appearance-panel.js'
 
 import { Gallery } from './gallery.js'
 import { Grid, Tour } from './tour.js'
@@ -45,18 +47,14 @@ renderer.toneMappingExposure = 1.0
 
 const pmrem = new THREE.PMREMGenerator(renderer)
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-// kameralny nastrój (cfg.mood): światło 70%, cieplejsze; dalsze partie sali lekko przygaszone
-const light = cfg.mood ? 0.7 : 1
-scene.environmentIntensity = 0.35 * light
-scene.add(new THREE.HemisphereLight(cfg.mood ? 0xffe9d0 : 0xffffff, cfg.mood ? 0xc9bfb2 : 0xd9d4ca, 2.1 * light))
-if (cfg.mood) {
-    scene.background.set(0x4a4540)
-    scene.fog = new THREE.Fog(0x4a4540, 20, 120)
-    // winieta: delikatne przyciemnienie brzegów ekranu (tylko podgląd, nie w filmach ze studia)
-    const vignette = document.createElement('div')
-    vignette.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(20,14,8,0.38) 100%)'
-    document.body.appendChild(vignette)
-}
+// Światło ogólne, mgła i winieta — ustawiane z panelu „Wygląd” (applyAppearance niżej)
+const hemisphere = new THREE.HemisphereLight(0xffffff, 0xc9bfb2, 2.1)
+scene.add(hemisphere)
+scene.fog = new THREE.Fog(0x4a4540, 20, 120)
+// winieta: delikatne przyciemnienie brzegów ekranu (tylko podgląd, nie w filmach ze studia)
+const vignette = document.createElement('div')
+vignette.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(20,14,8,0.38) 100%)'
+document.body.appendChild(vignette)
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 80)
 const eyeHeight = 1.62
@@ -74,6 +72,26 @@ window.addEventListener('resize', () => {
 
 
 const gallery = new Gallery(scene, renderer)
+
+// Wygląd galerii: domyślny od razu, zapisany (z serwera) zaraz po wczytaniu
+const applyAppearance = (a) => {
+    const ambient = a.light.ambient.intensity / 100
+    hemisphere.color.set(a.light.ambient.color)
+    hemisphere.intensity = 2.1 * ambient
+    scene.environmentIntensity = 0.35 * ambient
+    const fog = a.light.fog.intensity / 100
+    scene.background.set(a.light.fog.color)
+    scene.fog.color.set(a.light.fog.color)
+    scene.fog.near = 20
+    scene.fog.far = fog > 0.01 ? 20 + 100 / fog : 1e6
+    vignette.style.background = `radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(20,14,8,${Math.min(0.38 * a.effects.vignette / 100, 0.9).toFixed(3)}) 100%)`
+    if (gallery.setAppearance(a) && gallery.lastRooms) {
+        gallery.build(gallery.lastRooms)    // napisy w nowych kolorach
+        tour?.onRebuild()
+    }
+}
+applyAppearance(defaultAppearance)
+fetchAppearance().then(applyAppearance)
 let drawings = []        // wszystkie rysunki po kolei (sala po sali) — dla powiększenia
 let roomOf = []          // indeks sali dla każdego rysunku
 let signature = ''
@@ -611,6 +629,23 @@ initStudio({
         caption.hidden = true
     },
     afterEnd: () => {
+        studioBusy = false
+        showStartPanel(true)
+    }
+})
+
+// panel „Wygląd” (właściciel): sala widoczna za panelem, spacer wstrzymany do zwinięcia panelu
+initAppearancePanel({
+    apply: applyAppearance,
+    beforeOpen: () => {
+        studioBusy = true
+        if (tour.active) stopTour()
+        if (document.pointerLockElement) document.exitPointerLock()
+        setMobileNavigation(false)
+        startPanel.classList.add('hidden')
+        caption.hidden = true
+    },
+    afterClose: () => {
         studioBusy = false
         showStartPanel(true)
     }

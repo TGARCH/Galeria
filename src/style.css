@@ -424,3 +424,39 @@ body.focused .crosshair { background: var(--ink); transform: scale(1.6); }
     font-size: 12px;
     letter-spacing: 0.06em;
 }
+
+/* ——— panel „Wygląd” (właściciel) ——— */
+.look-button { right: 104px; }
+.look-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 30;
+    width: min(360px, 100vw); overflow-y: auto;
+    padding: 18px 20px 20px;
+    background: rgba(251, 250, 247, 0.94);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 16px;
+}
+.look-panel[hidden] { display: none; }
+.look-head { display: flex; justify-content: space-between; align-items: center; }
+.look-head .studio-eyebrow { margin: 0; }
+.look-x { background: none; border: 1px solid var(--line); padding: 6px 12px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.look-section { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.look-section h3 { font: 500 12px/1 Inter, Arial, sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; }
+.look-sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.look-row { display: grid; grid-template-columns: 92px 1fr 34px 14px; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
+.look-row--color { grid-template-columns: 92px 44px 1fr; }
+.look-row input[type="range"] { width: 100%; accent-color: var(--ink); }
+.look-row input[type="color"] { width: 44px; height: 26px; padding: 0; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+.look-row output { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.look-row--color output { text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+.look-row em { font-style: normal; font-size: 11px; color: var(--muted); }
+.look-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 2px 100px; }
+.look-chips button { padding: 4px 8px; font-size: 11px; border: 1px solid var(--line); background: #fff; }
+.look-foot { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: auto; }
+.look-foot button { padding: 11px; border: 1px solid var(--ink); background: none; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.look-foot .primary { background: var(--ink); color: var(--paper); }
+.look-foot__row { display: flex; gap: 8px; }
+.look-foot__row button { flex: 1; }
+@media (max-width: 640px) {
+    .look-panel { top: auto; height: 62vh; width: 100vw; border-left: none; border-top: 1px solid var(--line); }
+}
