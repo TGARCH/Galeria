@@ -2,11 +2,8 @@ import './style.css'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { inject } from '@vercel/analytics'
-import { galleryConfig as cfg, shadowTest } from './config.js'
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { galleryConfig as cfg } from './config.js'
+
 import { Gallery } from './gallery.js'
 import { Grid, Tour } from './tour.js'
 import { Reel } from './reel.js'
@@ -63,27 +60,8 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight
     camera.updateProjectionMatrix()
     renderer.setSize(window.innerWidth, window.innerHeight)
-    composer?.setSize(window.innerWidth, window.innerHeight)
 })
 
-// Test cieni (?cienie): rozproszone cienie kontaktowe — narożniki, styk ścian z podłogą,
-// podstawy ścianek, ramy na ścianie. Tylko przy zwykłym spacerze; nagrywanie w studiu bez zmian.
-let composer = null
-if (shadowTest.ao) {
-    composer = new EffectComposer(renderer)
-    composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25))
-    composer.setSize(window.innerWidth, window.innerHeight)
-    composer.addPass(new RenderPass(scene, camera))
-    const ao = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight)
-    // jaśniej i szerzej: duży promień (ok. 2,2 m) i łagodny spadek z odległością,
-    // mocne rozmycie — przyciemnienie rozlewa się daleko od narożników zamiast być wąską krechą
-    ao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.0, thickness: 4, distanceFallOff: 1, scale: 0.9, samples: 16 })
-    ao.updatePdMaterial({ lumaPhi: 8, depthPhi: 1.5, normalPhi: 2, radius: 12, rings: 3, samples: 16 })
-    ao.blendIntensity = 0.5
-    composer.addPass(ao)
-    composer.addPass(new OutputPass())
-}
-const renderScene = () => composer ? composer.render() : renderer.render(scene, camera)
 
 const gallery = new Gallery(scene, renderer)
 let drawings = []        // wszystkie rysunki po kolei (sala po sali) — dla powiększenia
@@ -655,7 +633,7 @@ const tick = () => {
     }
     gallery.stream(camera.position, elapsed)
     updateFocus(elapsed)
-    renderScene()
+    renderer.render(scene, camera)
     window.requestAnimationFrame(tick)
 }
 placeVisitor()

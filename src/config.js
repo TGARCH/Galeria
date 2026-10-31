@@ -26,7 +26,7 @@ export const galleryConfig = {
 
 // Test cieni (tylko z parametrem w adresie, produkcja bez zmian):
 //   ?cienie        — oba rodzaje
-//   ?cienie=ao     — tylko cienie kontaktowe w narożnikach i u podstaw ścian (ambient occlusion)
+//   ?cienie=ao     — tylko cienie kontaktowe: miękkie przyciemnienie przy styku ścian z podłogą
 //   ?cienie=plamy  — tylko miękkie cienie ram od reflektorów i ścianek na podłodze
 const shadowParam = new URLSearchParams(window.location.search).get('cienie')
 export const shadowTest = {
