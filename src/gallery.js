@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { galleryConfig as cfg, shadowTest, glassTest, glassStrength, floorReflectTest, floorReflectStrength } from './config.js'
+import { galleryConfig as cfg } from './config.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loadTexture, displayTitle, formatDate } from './drawings.js'
 
@@ -95,9 +95,9 @@ const makeGlowTexture = () => {
 }
 
 // Miękki cień: ciemny prostokąt zajmujący środkowe 80% tekstury, rozmyty ku krawędziom
-// (test cieni, ?cienie). Rozciągany na wymiar rzucającego cień elementu.
+// Rozciągany na wymiar rzucającego cień elementu.
 const SHADOW_CORE = 0.8
-// jasność źródeł światła w odbiciach (szkło, podłoga) względem rzeczywistej
+// jasność źródeł światła w odbiciach w szkle względem rzeczywistej
 const REFLECTED_LIGHT = 0.4
 const makeSoftShadowTexture = () => {
     const size = 512
@@ -118,7 +118,7 @@ const makeSoftShadowTexture = () => {
 
 const floorTexture = makeFloorTexture()
 const glowTexture = makeGlowTexture()
-const softShadowTexture = shadowTest.decals ? makeSoftShadowTexture() : null
+const softShadowTexture = cfg.softShadows ? makeSoftShadowTexture() : null
 
 const materials = {
     wall: new THREE.MeshStandardMaterial({ color: 0xcfcdc9, roughness: 0.94 }),
@@ -135,7 +135,7 @@ const materials = {
     track: new THREE.MeshStandardMaterial({ color: 0xe9e8e4, roughness: 0.4, metalness: 0.1 }),
     glow: new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }),
     placeholder: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 1 }),
-    // test cieni (?cienie)
+    // miękkie cienie (cfg.softShadows)
     frameShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }),
     floorShadow: new THREE.MeshBasicMaterial({ map: softShadowTexture, color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
 }
@@ -526,7 +526,7 @@ export class Gallery {
             addWall(x0 + W / 2, half, W + T, T)                           // południe
             for (const part of partitions) {
                 addWall(part.x, part.z, part.sx, part.sz, P.height)
-                if (shadowTest.decals) {
+                if (cfg.softShadows) {
                     // rozproszony cień ścianki na podłodze — światło ze świetlików w suficie
                     const shade = new THREE.Mesh(unitPlane, materials.floorShadow)
                     shade.rotation.x = -Math.PI / 2
@@ -562,15 +562,6 @@ export class Gallery {
         floorTexture.repeat.set(length / FLOOR_TILE, 2 * maxHalf / FLOOR_TILE)
         group.add(floor)
 
-        if (floorReflectTest) {
-            // warstwa samego odbicia nad deskami (czarna, addytywna) — kolor podłogi bez zmian
-            const sheen = new THREE.Mesh(unitPlane, this.floorSheenMaterial())
-            sheen.rotation.x = -Math.PI / 2
-            sheen.scale.copy(floor.scale)
-            sheen.position.set(floor.position.x, 0.002, floor.position.z)
-            group.add(sheen)
-        }
-
         const ceiling = new THREE.Mesh(unitPlane, materials.ceiling)
         ceiling.rotation.x = Math.PI / 2
         ceiling.scale.set(length, 2 * maxHalf, 1)
@@ -602,7 +593,7 @@ export class Gallery {
             group.add(holder)
 
             const f = cfg.frame
-            if (shadowTest.decals) {
+            if (cfg.softShadows) {
                 // cień ramy od reflektora nad i przed obrazem: pada na ścianę nieco niżej
                 const shade = new THREE.Mesh(unitPlane, materials.frameShadow)
                 shade.scale.set((size.outerW + 0.03) / SHADOW_CORE, (size.outerH + 0.03) / SHADOW_CORE, 1)
@@ -648,7 +639,7 @@ export class Gallery {
             art.position.z = matZ + 0.006
             holder.add(art)
 
-            if (glassTest) {
+            if (cfg.glass > 0) {
                 // szkło tuż za czołem ramy, w świetle passe-partout: czarne + mieszanie addytywne,
                 // więc widać wyłącznie odbicie — słabe na wprost, silne pod kątem (Fresnel)
                 const glass = new THREE.Mesh(unitPlane, this.glassMaterial())
@@ -695,7 +686,7 @@ export class Gallery {
 
         this.bounds = { minX: -1, maxX: length + 1, minZ: -maxHalf - 1, maxZ: maxHalf + 1 }
         this.scene.add(group)
-        if (glassTest || floorReflectTest) this.captureGlassReflections()
+        if (cfg.glass > 0) this.captureGlassReflections()
         this.lastStreamCheck = -1
     }
 
@@ -703,31 +694,16 @@ export class Gallery {
     glassMaterial() {
         this._glass ??= new THREE.MeshStandardMaterial({
             color: 0x000000, roughness: 0.03, metalness: 0,
-            envMap: this.scene.environment, envMapIntensity: 3.5 * glassStrength / 100,
+            envMap: this.scene.environment, envMapIntensity: 3.5 * cfg.glass / 100,
             transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
         })
         return this._glass
     }
 
-    // odbicie w podłodze: gładka warstwa (mało rozproszone odbicie) o STAŁEJ sile
-    // niezależnej od kąta — bez Fresnela, który pod małym kątem w głębi sali dawał
-    // niemal lustro i wybielał podłogę. Odbicie = floorReflectStrength % otoczenia
-    // (specularColor ≫ 1 → odbicie na wprost i pod kątem równe specularIntensity).
-    floorSheenMaterial() {
-        this._floorSheen ??= new THREE.MeshPhysicalMaterial({
-            color: 0x000000, roughness: 0.12, metalness: 0,
-            specularIntensity: floorReflectStrength / 100, specularColor: new THREE.Color(30, 30, 30),
-            envMap: this.scene.environment, envMapIntensity: 1,
-            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-            polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
-        })
-        return this._floorSheen
-    }
-
     // Odbicia w szkle: jednorazowe „zdjęcie dookoła” wnętrza galerii (środek pierwszej
     // sali, nieco nad wzrokiem) — w szybach widać jasne świetliki sufitu i ściany sali.
     captureGlassReflections() {
-        const reflective = [glassTest && this.glassMaterial(), floorReflectTest && this.floorSheenMaterial()].filter(Boolean)
+        const reflective = [this.glassMaterial()]
         const target = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType })
         const cubeCamera = new THREE.CubeCamera(0.1, 80, target)
         cubeCamera.position.set(W / 2, 2.0, 0)

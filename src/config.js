@@ -20,25 +20,11 @@ export const galleryConfig = {
         centerHeight: 1.6     // wysokość środka obrazu [m]
     },
 
+    // Szkło przed rysunkami: siła odbicia [%] (pod kątem rośnie, na wprost prawie niewidoczne); 0 = bez szkła
+    glass: 10,
+    // Miękkie cienie ram od reflektorów i rozproszone plamy cienia wokół ścianek na podłodze
+    softShadows: true,
+
     // Jak często sprawdzać, czy na Dysku pojawiły się nowe pliki [s]
     refreshInterval: 90
 }
-
-// Test cieni (tylko z parametrem ?cienie w adresie, produkcja bez zmian):
-// miękkie cienie ram od reflektorów i rozproszone plamy cienia wokół ścianek na podłodze
-export const shadowTest = {
-    decals: new URLSearchParams(window.location.search).has('cienie')
-}
-
-// Test szkła (?szklo lub ?szkło): tafla szkła w ramie, odbijająca światło coraz mocniej pod kątem
-const glassParams = new URLSearchParams(window.location.search)
-const glassValue = glassParams.get('szklo') ?? glassParams.get('szkło')
-export const glassTest = glassValue !== null
-// siła odbicia w % (100% = najmocniejsze testowane); ?szkło=30 itp., domyślnie 10%
-export const glassStrength = glassTest && glassValue !== '' && !Number.isNaN(Number(glassValue)) ? Number(glassValue) : 10
-
-// Test odbić w podłodze (?podloga lub ?podłoga): siła w % w tej samej skali co szkło,
-// domyślnie 5%; ostre, mało rozproszone odbicie wnętrza galerii w deskach
-const floorValue = glassParams.get('podloga') ?? glassParams.get('podłoga')
-export const floorReflectTest = floorValue !== null
-export const floorReflectStrength = floorReflectTest && floorValue !== '' && !Number.isNaN(Number(floorValue)) ? Number(floorValue) : 5
